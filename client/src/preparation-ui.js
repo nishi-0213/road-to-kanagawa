@@ -1,3 +1,4 @@
+import {getDefense} from '../../shared/preparation.js';
 import {ITEMS} from '../../shared/items.js';
 
 export function drawPreparationInventory(scene,players,selfId,state){
@@ -29,11 +30,12 @@ export function drawPreparationInventory(scene,players,selfId,state){
  text(left+lootWidth+gap+trashWidth/2,top+36,'捨てる',{fontSize:'22px',color:'#f1c8b9'}).setOrigin(.5);text(left+lootWidth+gap+trashWidth/2,top+69,'ドロップで削除',{fontSize:'11px',color:'#d3aaa2'}).setOrigin(.5);
  const panelTop=top+stripHeight+38,panelGap=14,panelWidth=Math.min(360,(mainWidth-panelGap*(players.length-1))/players.length),panelHeight=Math.max(68,height-panelTop-20);
  players.forEach((player,order)=>{
-  const x=left+order*(panelWidth+panelGap),mine=player.id===selfId,slots=player.inventorySlots||Array(12).fill(null),rows=Math.ceil(slots.length/4),cell=Math.max(16,Math.min(52,(panelWidth-20)/4,(panelHeight-18)/rows));
+  const x=left+order*(panelWidth+panelGap),mine=player.id===selfId,slots=player.inventorySlots||Array(12).fill(null),rows=Math.ceil(slots.length/4),cell=Math.max(16,Math.min(52,(panelWidth-20)/4,(panelHeight-42)/rows));
   text(x,panelTop-25,`プレイヤー${player.slot} アイテム欄${mine?'（あなた）':''}`,{fontSize:`${Math.max(9,Math.min(16,(panelWidth-8)/(mine?19:14)))}px`,color:mine?'#d0e8b3':'#a1b3be'});
   rect(x,panelTop,panelWidth,panelHeight,0x11222d).setStrokeStyle(1,mine?0x9cbf94:0x455d6c);
   scene.inventoryPanels.push({playerId:player.id,x,y:panelTop,width:panelWidth,height:panelHeight});
-  const gridX=x+(panelWidth-cell*4)/2,gridY=panelTop+10;
+  text(x+10,panelTop+8,`防御力 ${getDefense(player)}`,{fontSize:'13px',color:'#bed5f3'});
+  const gridX=x+(panelWidth-cell*4)/2,gridY=panelTop+34;
   slots.forEach((item,index)=>slot('inventory',index,gridX+(index%4+.5)*cell,gridY+(Math.floor(index/4)+.5)*cell,cell,item,mine,player.id));
  });
 }

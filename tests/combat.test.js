@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {availableItems,stepCombat,MAX_HP} from '../shared/combat.js';
 import {ensureInventory,finishBattleInventory,movePreparationItem} from '../shared/preparation.js';
-import {openBox} from '../shared/items.js';
+import {openBox,ITEMS} from '../shared/items.js';
 import {createBattle} from '../shared/battle.js';
 import {cycleItem} from '../client/src/combat-ui.js';
 const make=()=>ensureInventory({id:'a',slot:1,hp:20,x:64,y:64,inventory:{food:3,fuel:2,rifle:1,knife:1,medicine:2}});
@@ -29,7 +29,7 @@ test('medicine at full HP is not consumed and battle HP carries across nodes',()
  const p=make();p.hp=MAX_HP;tick({},p,{use:true,selected:'medicine'},4);assert.equal(p.inventory.medicine,2);p.hp=43;createBattle([p],()=>.4);assert.equal(p.hp,43);assert.equal(p.healProgress,0);
 });
 test('new loot stays unusable until claimed into personal inventory during preparation',()=>{
- const p=ensureInventory({id:'a',slot:1,x:64,y:64,hp:40}),map={id:'round',inventoryVersion:2,boxes:[{id:'med',x:64,y:64,opened:false}]};assert.deepEqual(openBox(map,p,'med',()=>.95),{item:'medicine',quantity:1});assert.equal(p.battleLoot.medicine,1);
+ const p=ensureInventory({id:'a',slot:1,x:64,y:64,hp:40}),map={id:'round',inventoryVersion:2,boxes:[{id:'med',x:64,y:64,opened:false}]};assert.deepEqual(openBox(map,p,'med',()=>(ITEMS.findIndex(item=>item.id==='medicine')+.5)/ITEMS.length),{item:'medicine',quantity:1});assert.equal(p.battleLoot.medicine,1);
  assert.deepEqual(availableItems(p),[]);tick(map,p,{use:true,selected:'medicine'},3);assert.equal(p.hp,40);assert.equal(p.battleLoot.medicine,1);
  const preparation=finishBattleInventory(map,[p]),item=preparation.loot[0];assert.equal(item.item,'medicine');
  assert.ok(movePreparationItem(preparation,[p],p.id,{from:{area:'loot',index:0},to:{area:'inventory',index:0},itemId:item.id,targetItemId:null}));

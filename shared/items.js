@@ -1,6 +1,6 @@
 import {ensureInventory} from './preparation.js';
 import {canStand} from './terrain.js';
-export const ITEMS=[{id:'food',name:'食料'},{id:'fuel',name:'燃料'},{id:'knife',name:'ナイフ'},{id:'rifle',name:'ライフル'},{id:'medicine',name:'医薬品'}];
+export const ITEMS=[{id:'food',name:'食料'},{id:'fuel',name:'燃料'},{id:'knife',name:'ナイフ'},{id:'rifle',name:'ライフル'},{id:'medicine',name:'医薬品'},{id:'pants',name:'ズボン'},{id:'hat',name:'帽子'},{id:'tshirt',name:'Tシャツ'}];
 export const OPEN_DISTANCE=48;
 export function createInventory(){return Object.fromEntries(ITEMS.map(i=>[i.id,0]));}
 export function createBoxes(map,random=Math.random){
@@ -31,7 +31,7 @@ function canReachBox(map,p,box){
 export function openBox(map,p,id,random=Math.random){
  const box=(map.boxes||[]).find(b=>b.id===id);
  if(!box||box.opened||Math.hypot(box.x-p.x,box.y-p.y)>OPEN_DISTANCE||!canReachBox(map,p,box))return null;
- const item=ITEMS[Math.min(4,Math.floor(random()*5))].id;
+ const item=ITEMS[Math.min(ITEMS.length-1,Math.floor(random()*ITEMS.length))].id;
  const quantity=item==='food'||item==='fuel'?1+Math.min(3,Math.floor(random()*4)):1;
  ensureInventory(p);if(item==='food'||item==='fuel')p.inventory[item]+=quantity;else p.battleLoot[item]+=quantity;
  box.opened=true;box.openedBy=p.id;box.loot={item,quantity};return box.loot;

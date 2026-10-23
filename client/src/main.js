@@ -91,6 +91,7 @@ class GameScene extends Phaser.Scene{
    this.hud.add(this.add.rectangle(570,54,164,14,0x15202a).setOrigin(0).setStrokeStyle(1,0x88676c));
    this.hpBar=this.add.rectangle(572,56,160,10,0xe17e88).setOrigin(0);this.hud.add(this.hpBar);
    this.hpText=this.text(744,51,'HP 100/100',{fontSize:'14px'});this.hud.add(this.hpText);
+   this.defenseText=this.text(530,84,'防御力 0',{fontSize:'14px',color:'#bed5f3'});this.hud.add(this.defenseText);
    this.equippedText=this.text(260,104,'',{fontSize:'13px',color:'#ffe7a5'});this.hud.add(this.equippedText);
    const hx=this.scale.width/2,hy=this.scale.height-70;
    this.healBack=this.add.rectangle(hx,hy,164,8,0x15202a).setVisible(false);this.hud.add(this.healBack);
@@ -103,7 +104,7 @@ class GameScene extends Phaser.Scene{
   }else this.preparation();
  }
  buildInventory(){
-  this.hud.add(this.add.rectangle(12,126,218,218,0x101820,.85).setOrigin(0));
+  this.hud.add(this.add.rectangle(12,126,218,ITEMS.length*34+50,0x101820,.85).setOrigin(0));
   this.hud.add(this.text(24,134,'所持・今回取得アイテム',{fontSize:'16px',color:'#eff7fa'}));
   ITEMS.forEach((item,index)=>{const y=174+index*34;const selected=this.add.rectangle(20,y-15,202,30,0x48614a,.8).setOrigin(0).setStrokeStyle(1,0xd5e997).setVisible(false);this.hud.add(selected);this.inventorySelections.set(item.id,selected);this.hud.add(this.add.image(36,y,item.id).setDisplaySize(24,24));this.hud.add(this.text(58,y,item.name).setOrigin(0,.5));const count=this.text(206,y,'0',{color:'#eff7fa'}).setOrigin(1,.5);this.hud.add(count);this.inventoryCounts.set(item.id,count);});
  }

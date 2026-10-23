@@ -1,5 +1,5 @@
 import {stepCombat,MAX_HP} from './combat.js';
-import {ensureInventory} from './preparation.js';
+import {ensureInventory,createBattleLoot} from './preparation.js';
 import {createBoxes,createInventory,stepLoot} from './items.js';
 import {BIOMES,createTrees,createRocks,movePlayer} from './terrain.js';
 export const TILE=32, SPEED=160, SIZES=[[30,40],[50,25],[40,30],[20,60]];
@@ -8,7 +8,7 @@ export function createBattle(players,random=Math.random){
  const biome=BIOMES[Math.min(2,Math.floor(random()*3))],seed=Math.floor(random()*0xffffffff);
  const trees=biome==='forest'?createTrees(cols,rows,seed):[];
  const rocks=createRocks(cols,rows,seed,trees);
- for(const p of players){ensureInventory(p);p.battleLoot={knife:0,rifle:0,medicine:0};}
+ for(const p of players){ensureInventory(p);p.battleLoot=createBattleLoot();}
  for(const [index,p] of players.entries())Object.assign(p,{x:32+(index%2)*32,y:rows*TILE-32-Math.floor(index/2)*32,hp:Number.isFinite(p.hp)?p.hp:MAX_HP,strongCharge:0,strongLatched:false,healProgress:0,healLatched:false,attackCooldown:0,stamina:1,exhausted:false,ready:false,inventory:p.inventory||createInventory(),lootBoxId:null,lootProgress:0});
  const map={inventoryVersion:2,id:crypto.randomUUID(),cols,rows,biome,seed,trees,rocks,exit:{x:(cols-2)*TILE,y:0,width:2*TILE,height:3*TILE},escape:0,inside:0};
  map.boxes=createBoxes(map,random);return map;

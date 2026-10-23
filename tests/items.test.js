@@ -26,7 +26,7 @@ test('distance and obstruction validation, concurrent claim has a single owner, 
  const map={trees:[],rocks:[],boxes:[{id:'box',x:144,y:144,opened:false}]},a={...make(),x:16,y:16},b={...make(),id:'b',x:144,y:144};
  assert.equal(openBox(map,a,'box'),null);assert.equal(nearestBox(map,a),undefined);
  a.x=100;a.y=144;map.rocks=[{col:3,row:4}];assert.equal(openBox(map,a,'box'),null);
- map.rocks=[];a.x=144;assert.ok(openBox(map,a,'box',()=>.7));assert.equal(openBox(map,b,'box'),null);assert.equal(a.battleLoot.rifle,1);assert.equal(b.battleLoot.rifle,0);
+ map.rocks=[];a.x=144;assert.ok(openBox(map,a,'box',()=>(ITEMS.findIndex(item=>item.id==='rifle')+.5)/ITEMS.length));assert.equal(openBox(map,b,'box'),null);assert.equal(a.battleLoot.rifle,1);assert.equal(b.battleLoot.rifle,0);
  map.id='round';map.inventoryVersion=2;const prep=finishBattleInventory(map,[a,b]);assert.equal(a.inventory.rifle,0);const item=prep.loot[0];assert.ok(movePreparationItem(prep,[a,b],a.id,{from:{area:'loot',index:0},to:{area:'inventory',index:0},itemId:item.id,targetItemId:null}));
  createBattle([a],()=>.4);assert.equal(a.inventory.rifle,1);
 });
@@ -44,5 +44,5 @@ test('looting requires a full uninterrupted second, displays progress and resets
 });
 test('simultaneous timed loot still awards one player exactly once',()=>{
  const map={trees:[],rocks:[],boxes:[{id:'box',x:64,y:64,opened:false}]},a={...make(),x:64,y:64},b={...make(),id:'b',x:64,y:64},inputs=new Map([[a.id,{interact:true}],[b.id,{interact:true}]]);
- for(let i=0;i<20;i++)stepLoot(map,[a,b],inputs,.05,()=>.7);assert.equal(a.battleLoot.rifle+b.battleLoot.rifle,1);assert.equal(b.lootProgress,0);for(let i=0;i<40;i++)stepLoot(map,[a,b],inputs,.05,()=>.7);assert.equal(a.battleLoot.rifle+b.battleLoot.rifle,1);
+ for(let i=0;i<20;i++)stepLoot(map,[a,b],inputs,.05,()=>(ITEMS.findIndex(item=>item.id==='rifle')+.5)/ITEMS.length);assert.equal(a.battleLoot.rifle+b.battleLoot.rifle,1);assert.equal(b.lootProgress,0);for(let i=0;i<40;i++)stepLoot(map,[a,b],inputs,.05,()=>(ITEMS.findIndex(item=>item.id==='rifle')+.5)/ITEMS.length);assert.equal(a.battleLoot.rifle+b.battleLoot.rifle,1);
 });
