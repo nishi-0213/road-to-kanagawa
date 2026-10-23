@@ -8,7 +8,7 @@ const item=(id,type='knife')=>({id,item:type,quantity:1});
 const move=(state,players,id,from,to,targetItemId=null)=>movePreparationItem(state,players,id,{from,to,itemId:(from.area==='loot'?state.loot:players.find(p=>p.id===id).inventorySlots)[from.index]?.id,targetItemId});
 test('weapon pickups are unowned pending loot, resources are immediately counted outside grids',()=>{
  const p=player(),map={id:'round',inventoryVersion:2,trees:[],rocks:[],boxes:[{id:'b',x:64,y:64,opened:false},{id:'f',x:64,y:64,opened:false}]};p.x=64;p.y=64;
- openBox(map,p,'b',()=>.9);openBox(map,p,'f',()=>.1);assert.equal(p.inventory.rifle,0);assert.equal(p.battleLoot.rifle,1);assert.equal(p.inventory.food,4);
+ openBox(map,p,'b',()=>.7);openBox(map,p,'f',()=>.1);assert.equal(p.inventory.rifle,0);assert.equal(p.battleLoot.rifle,1);assert.equal(p.inventory.food,4);
  const state=finishBattleInventory(map,[p]);assert.equal(state.loot.filter(Boolean).length,1);assert.equal(state.loot[0].item,'rifle');assert.equal(p.battleLoot.rifle,0);assert.ok(p.inventorySlots.every(x=>!x));
 });
 test('claim, rearrange, swap, return and trash keep item identities and own inventory counts consistent',()=>{

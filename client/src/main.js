@@ -1,3 +1,5 @@
+import {cycleItem,renderCombatEffects,updateCombatHud} from './combat-ui.js';
+import {availableItems} from '../../shared/combat.js';
 import {drawPreparationInventory,installPreparationDrag} from './preparation-ui.js';
 import {ensureInventory,createPreparation,finishBattleInventory,discardUnclaimed,movePreparationItem} from '../../shared/preparation.js';
 import {createRoute,nextNodes,selectNode,finishBattle,nodeInfo,CITIES,ringCount,canStartBattle,startBattle} from '../../shared/route.js';
@@ -47,7 +49,10 @@ class GameScene extends Phaser.Scene{
   gameScene=this;this.actors=new Map();this.lastSend=0;this.lootMapId=null;this.shownLoot=new Set();
   this.installInventoryDrag();
   this.keys=this.input.keyboard.addKeys('W,A,S,D,SHIFT,E');
-  this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
+  this.input.on('wheel',(_pointer,_objects,_dx,dy)=>{if(phase==='BATTLE'&&dy)this.selectedItem=cycleItem(this.selectedItem,players.find(p=>p.id===selfId),Math.sign(dy));});
+  this.game.canvas.addEventListener('wheel',event=>event.preventDefault(),{passive:false});
+  this.game.canvas.addEventListener('contextmenu',event=>event.preventDefault());
+  this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();this.input.activePointer.reset();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
   // A neutral temporary 32px figure is used only until the original PNG is available.
   if(!this.textures.exists('player')){const g=this.make.graphics({x:0,y:0,add:false});g.fillStyle(0xeef5f7);g.fillCircle(16,9,6);g.fillRoundedRect(10,16,12,11,2);g.fillRect(9,26,5,5);g.fillRect(18,26,5,5);g.generateTexture('player',32,32);g.destroy();}
   const ground=this.make.graphics({x:0,y:0,add:false});ground.fillStyle(0x344a38);ground.fillRect(0,0,32,32);ground.lineStyle(1,0x3c5540);ground.strokeRect(.5,.5,31,31);ground.fillStyle(0x4a6348);ground.fillRect(5,7,2,2);ground.fillRect(22,24,3,1);ground.generateTexture('ground',32,32);ground.destroy();
@@ -64,8 +69,8 @@ class GameScene extends Phaser.Scene{
  text(x,y,text,style={}){return this.add.text(x,y,text,{...STYLE,...style});}
  refresh(){
   this.dragging=false;this.pendingDrop=null;
-  for(const object of this.children.list)if(object.name==='loot-popup')this.tweens.killTweensOf(object);
-  this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.boxProgress=new Map();this.inventoryCounts=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
+  for(const object of this.children.list)if(object.name==='loot-popup'||object.name==='combat-effect')this.tweens.killTweensOf(object);
+  this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.boxProgress=new Map();this.inventoryCounts=new Map();this.inventorySelections=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
   const camera=this.cameras.main;camera.stopFollow();camera.setScroll(0,0);camera.removeBounds();camera.setZoom(1);
   if(!mode)return;
   if(phase==='BATTLE'&&battle)this.buildBattle();
@@ -81,6 +86,15 @@ class GameScene extends Phaser.Scene{
    this.hud.add(this.text(260,25,`${battle.city||''}　${BIOME_NAMES[battle.biome]||'森林地帯'}　WASD：移動 / Shift：ダッシュ`,{fontSize:'14px'}));
    this.hud.add(this.text(260,54,'スタミナ',{fontSize:'14px'}));
    this.hud.add(this.add.rectangle(340,54,164,14,0x15202a).setOrigin(0).setStrokeStyle(1,0x66807b));
+   this.hud.add(this.text(530,51,'HP',{fontSize:'14px'}));
+   this.hud.add(this.add.rectangle(570,54,164,14,0x15202a).setOrigin(0).setStrokeStyle(1,0x88676c));
+   this.hpBar=this.add.rectangle(572,56,160,10,0xe17e88).setOrigin(0);this.hud.add(this.hpBar);
+   this.hpText=this.text(744,51,'HP 100/100',{fontSize:'14px'});this.hud.add(this.hpText);
+   this.equippedText=this.text(260,104,'',{fontSize:'13px',color:'#ffe7a5'});this.hud.add(this.equippedText);
+   const hx=this.scale.width/2,hy=this.scale.height-70;
+   this.healBack=this.add.rectangle(hx,hy,164,8,0x15202a).setVisible(false);this.hud.add(this.healBack);
+   this.healBar=this.add.rectangle(hx-80,hy-2,160,4,0x89e6ac).setOrigin(0).setVisible(false);this.hud.add(this.healBar);
+   this.healText=this.text(hx,hy-24,'',{fontSize:'14px',color:'#b3f3ce'}).setOrigin(.5).setVisible(false);this.hud.add(this.healText);
    this.staminaBar=this.add.rectangle(342,56,160,10,0x88ddbb).setOrigin(0);this.hud.add(this.staminaBar);
    this.hud.add(this.text(260,84,'右上の脱出ゾーンへ',{fontSize:'14px'}));
    this.buildInventory();
@@ -88,9 +102,9 @@ class GameScene extends Phaser.Scene{
   }else this.preparation();
  }
  buildInventory(){
-  this.hud.add(this.add.rectangle(12,126,218,180,0x101820,.85).setOrigin(0));
+  this.hud.add(this.add.rectangle(12,126,218,218,0x101820,.85).setOrigin(0));
   this.hud.add(this.text(24,134,'所持・今回取得アイテム',{fontSize:'16px',color:'#eff7fa'}));
-  ITEMS.forEach((item,index)=>{const y=174+index*34;this.hud.add(this.add.image(36,y,item.id).setDisplaySize(24,24));this.hud.add(this.text(58,y,item.name).setOrigin(0,.5));const count=this.text(206,y,'0',{color:'#eff7fa'}).setOrigin(1,.5);this.hud.add(count);this.inventoryCounts.set(item.id,count);});
+  ITEMS.forEach((item,index)=>{const y=174+index*34;const selected=this.add.rectangle(20,y-15,202,30,0x48614a,.8).setOrigin(0).setStrokeStyle(1,0xd5e997).setVisible(false);this.hud.add(selected);this.inventorySelections.set(item.id,selected);this.hud.add(this.add.image(36,y,item.id).setDisplaySize(24,24));this.hud.add(this.text(58,y,item.name).setOrigin(0,.5));const count=this.text(206,y,'0',{color:'#eff7fa'}).setOrigin(1,.5);this.hud.add(count);this.inventoryCounts.set(item.id,count);});
  }
  preparation(){
   this.drawRoute();
@@ -207,7 +221,9 @@ class GameScene extends Phaser.Scene{
  }
  update(time,delta){
   if(!mode||phase!=='BATTLE'||!battle)return;
-  const k=this.keys,input={left:k.A.isDown,right:k.D.isDown,up:k.W.isDown,down:k.S.isDown,sprint:k.SHIFT.isDown,interact:k.E.isDown};
+  const localPlayer=players.find(p=>p.id===selfId),usable=availableItems(localPlayer);if(!usable.includes(this.selectedItem))this.selectedItem=usable[0]||null;
+  const pointer=this.input.activePointer,aim=this.cameras.main.getWorldPoint(pointer.x,pointer.y);
+  const k=this.keys,input={left:k.A.isDown,right:k.D.isDown,up:k.W.isDown,down:k.S.isDown,sprint:k.SHIFT.isDown,interact:k.E.isDown,use:pointer.leftButtonDown()&&document.hasFocus()&&!document.hidden,selected:this.selectedItem,aimX:aim.x,aimY:aim.y};
   const meBefore=players.find(p=>p.id===selfId),nearby=meBefore?nearestBox(battle,meBefore):null;
   if(mode==='solo'){
    const now=performance.now();let remaining=Math.min(1,(now-(this.lastSimulation??now))/1000);this.lastSimulation=now;
@@ -215,7 +231,8 @@ class GameScene extends Phaser.Scene{
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
   const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();this.actors.delete(id);}
   for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId);}
-  const me=players.find(p=>p.id===selfId);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
+  renderCombatEffects(this,battle);
+  const me=players.find(p=>p.id===selfId);updateCombatHud(this,me);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
   for(const box of battle.boxes||[]){
    if(box.opened&&!this.shownLoot.has(box.id)){this.shownLoot.add(box.id);this.showPickup(box);}
    const image=this.boxSprites.get(box.id);if(image)image.setAlpha(box.opened?.28:1).setTint(box.opened?0x7f8b8e:0xffffff);

@@ -1,3 +1,4 @@
+import {stepCombat,MAX_HP} from './combat.js';
 import {ensureInventory} from './preparation.js';
 import {createBoxes,createInventory,stepLoot} from './items.js';
 import {BIOMES,createTrees,createRocks,movePlayer} from './terrain.js';
@@ -7,8 +8,8 @@ export function createBattle(players,random=Math.random){
  const biome=BIOMES[Math.min(2,Math.floor(random()*3))],seed=Math.floor(random()*0xffffffff);
  const trees=biome==='forest'?createTrees(cols,rows,seed):[];
  const rocks=createRocks(cols,rows,seed,trees);
- for(const p of players){ensureInventory(p);p.battleLoot={knife:0,rifle:0};}
- for(const [index,p] of players.entries())Object.assign(p,{x:32+(index%2)*32,y:rows*TILE-32-Math.floor(index/2)*32,stamina:1,exhausted:false,ready:false,inventory:p.inventory||createInventory(),lootBoxId:null,lootProgress:0});
+ for(const p of players){ensureInventory(p);p.battleLoot={knife:0,rifle:0,medicine:0};}
+ for(const [index,p] of players.entries())Object.assign(p,{x:32+(index%2)*32,y:rows*TILE-32-Math.floor(index/2)*32,hp:Number.isFinite(p.hp)?p.hp:MAX_HP,healProgress:0,healLatched:false,attackCooldown:0,stamina:1,exhausted:false,ready:false,inventory:p.inventory||createInventory(),lootBoxId:null,lootProgress:0});
  const map={inventoryVersion:2,id:crypto.randomUUID(),cols,rows,biome,seed,trees,rocks,exit:{x:(cols-2)*TILE,y:0,width:2*TILE,height:3*TILE},escape:0,inside:0};
  map.boxes=createBoxes(map,random);return map;
 }
@@ -27,6 +28,7 @@ export function stepBattle(map,players,inputs,seconds){
   else{p.stamina=Math.min(1,p.stamina+dt/6);if(p.stamina>1-1e-8){p.stamina=1;p.exhausted=false;}}
  }
  stepLoot(map,players,inputs,dt);
+ stepCombat(map,players,inputs,dt);
  map.inside=players.filter(p=>inExit(p,map)).length;
  map.escape=players.length>0&&map.inside===players.length?Math.min(3,map.escape+dt):0;
  return map.escape>=3-1e-8;
