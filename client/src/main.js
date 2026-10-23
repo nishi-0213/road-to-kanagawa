@@ -1,5 +1,5 @@
-import {createRoute,nextNodes,selectNode,finishBattle,nodeInfo} from '../../shared/route.js';
-import {ITEMS,nearestBox,openBox} from '../../shared/items.js';
+import {createRoute,nextNodes,selectNode,finishBattle,nodeInfo,CITIES,ringCount} from '../../shared/route.js';
+import {ITEMS,nearestBox} from '../../shared/items.js';
 import Phaser from 'phaser';
 import './style.css';
 import {createBattle,stepBattle,TILE} from '../../shared/battle.js';
@@ -44,7 +44,6 @@ class GameScene extends Phaser.Scene{
  create(){
   gameScene=this;this.actors=new Map();this.lastSend=0;
   this.keys=this.input.keyboard.addKeys('W,A,S,D,SHIFT,E');
-  this.input.keyboard.on('keydown-E',event=>{if(!event.repeat)this.tryOpenBox();});
   this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
   // A neutral temporary 32px figure is used only until the original PNG is available.
   if(!this.textures.exists('player')){const g=this.make.graphics({x:0,y:0,add:false});g.fillStyle(0xeef5f7);g.fillCircle(16,9,6);g.fillRoundedRect(10,16,12,11,2);g.fillRect(9,26,5,5);g.fillRect(18,26,5,5);g.generateTexture('player',32,32);g.destroy();}
@@ -55,7 +54,7 @@ class GameScene extends Phaser.Scene{
  }
  text(x,y,text,style={}){return this.add.text(x,y,text,{...STYLE,...style});}
  refresh(){
-  this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.inventoryCounts=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
+  this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.boxProgress=new Map();this.inventoryCounts=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
   const camera=this.cameras.main;camera.stopFollow();camera.setScroll(0,0);camera.removeBounds();camera.setZoom(1);
   if(!mode)return;
   if(phase==='BATTLE'&&battle)this.buildBattle();
@@ -82,11 +81,6 @@ class GameScene extends Phaser.Scene{
   this.hud.add(this.text(24,134,'所持アイテム',{fontSize:'16px',color:'#eff7fa'}));
   ITEMS.forEach((item,index)=>{const y=174+index*34;this.hud.add(this.add.image(36,y,item.id).setDisplaySize(24,24));this.hud.add(this.text(58,y,item.name).setOrigin(0,.5));const count=this.text(206,y,'0',{color:'#eff7fa'}).setOrigin(1,.5);this.hud.add(count);this.inventoryCounts.set(item.id,count);});
  }
- tryOpenBox(){
-  if(!mode||phase!=='BATTLE'||!battle)return;
-  const player=players.find(p=>p.id===selfId),box=player?nearestBox(battle,player):null;if(!box)return;
-  if(mode==='solo')openBox(battle,player,box.id);else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'open_box',id:box.id}));
- }
  preparation(){
   this.drawRoute();
   const startY=Math.max(145,this.scale.height/3+85),locked=route?.canAdvance||route?.finished;
@@ -109,29 +103,36 @@ class GameScene extends Phaser.Scene{
   const height=this.scale.height/3,top=Math.min(112,height*.45),width=this.scale.width;
   this.hud.add(this.add.rectangle(0,105,width,Math.max(0,height-105),0x182732,.85).setOrigin(0));
   const yCenter=(top+height-36)/2,amplitude=Math.max(12,(height-top-62)/2);
-  const positions=route.nodes.map(n=>({x:32+n.id*(width-64)/(route.nodes.length-1),y:yCenter+n.lane*amplitude}));
+  const positions=route.nodes.map(n=>({x:32+n.stage*(width-64)/(CITIES.length-1),y:yCenter+n.lane*amplitude}));
   const allowed=nextNodes(route),lines=this.add.graphics();this.hud.add(lines);
   for(const edge of route.edges){const a=positions[edge.from],b=positions[edge.to],active=edge.from===route.current&&allowed.includes(edge.to);lines.lineStyle(active?2:1,active?0xdde990:0x65737d,active?1:.65);lines.lineBetween(a.x,a.y,b.x,b.y);}
-  this.routeCircles=new Map();
+  this.routeCircles=new Map();this.routeRings=new Map();
   const tooltip=this.add.container(0,0).setDepth(1).setVisible(false);this.routeTooltip=tooltip;
   tooltip.add(this.add.rectangle(0,0,236,110,0x101b25,.98).setOrigin(0).setStrokeStyle(1,0xb7a760));
   const tooltipText=this.text(12,10,'',{fontSize:'14px',lineSpacing:6,color:'#f2e9c5'});tooltip.add(tooltipText);
   for(const node of route.nodes){
    const p=positions[node.id],visited=route.visited.includes(node.id),base=visited?0xb9e56c:0xffe5a0;
-   const circle=this.add.circle(p.x,p.y,10,base).setStrokeStyle(node.id===route.current?3:1,node.id===route.current?0xeafbc8:0x8e845f).setInteractive({useHandCursor:allowed.includes(node.id)});
+   const count=ringCount(node.trait),rings=[];
+   for(let ring=1;ring<count;ring++){const outline=this.add.circle(p.x,p.y,10+ring*4).setFillStyle(0,0).setStrokeStyle(1.5,base);rings.push(outline);this.hud.add(outline);}
+   this.routeRings.set(node.id,rings);
+   const circle=this.add.circle(p.x,p.y,10,base).setStrokeStyle(node.id===route.current?3:1,node.id===route.current?0xeafbc8:0x8e845f).setInteractive({hitArea:new Phaser.Geom.Circle(10,10,10+(count-1)*4),hitAreaCallback:Phaser.Geom.Circle.Contains,useHandCursor:allowed.includes(node.id)});
    this.hud.add(circle);this.routeCircles.set(node.id,circle);
    circle.on('pointerover',()=>{
-    if(!visited)circle.setFillStyle(0xd7a923);const info=nodeInfo(node,players.length);
+    if(!visited){circle.setFillStyle(0xd7a923);rings.forEach(r=>r.setStrokeStyle(1.5,0xd7a923));}const info=nodeInfo(node,players.length);
     tooltipText.setText(`${info.name}\n特性：${info.trait}\n消費燃料：${info.fuel}　食料：${info.food}\n食料は1人あたり1つ`);
     tooltip.setPosition(Math.max(8,Math.min(width-244,p.x-118)),p.y+38).setVisible(true);
-   });circle.on('pointerout',()=>{circle.setFillStyle(base);tooltip.setVisible(false);});
+   });circle.on('pointerout',()=>{circle.setFillStyle(base);rings.forEach(r=>r.setStrokeStyle(1.5,base));tooltip.setVisible(false);});
    circle.on('pointerdown',()=>{
     if(!allowed.includes(node.id))return;
     if(mode==='solo'){if(selectNode(route,node.id)){players.forEach(p=>p.ready=false);this.refresh();}}
     else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'select_node',target:node.id}));
    });
-   const name=node.name==='神奈川ゴール'?'神奈川\nゴール':node.name;
-   this.hud.add(this.text(p.x,p.y+17,name,{fontSize:`${Math.min(13,Math.max(10,(width-64)/route.nodes.length/4))}px`,align:'center',color:visited?'#c9ee95':'#d9e0d8'}).setOrigin(.5,0));
+
+  }
+  for(let stage=0;stage<CITIES.length;stage++){
+   const group=route.nodes.filter(n=>n.stage===stage),x=positions[group[0].id].x,y=Math.max(...group.map(n=>positions[n.id].y+10+(ringCount(n.trait)-1)*4))+7;
+   const visited=group.some(n=>route.visited.includes(n.id)),name=CITIES[stage]==='神奈川ゴール'?'神奈川\nゴール':CITIES[stage];
+   this.hud.add(this.text(x,y,name,{fontSize:`${Math.min(13,Math.max(10,(width-64)/CITIES.length/4))}px`,align:'center',color:visited?'#c9ee95':'#d9e0d8'}).setOrigin(.5,0));
   }
   this.hud.add(tooltip);
   const status=route.finished?'神奈川ゴールに到達しました！':route.canAdvance?'接続された右側のノードをクリックして進んでください。':'準備ができたら準備完了を押してください。脱出後に次のノードへ進めます。';
@@ -169,7 +170,7 @@ class GameScene extends Phaser.Scene{
   for(const t of battle.trees||[]){const tree=this.add.image((t.col+.5)*32,(t.row+1)*32,'tree').setOrigin(.5,1);const ratio=tree.height/tree.width;tree.setDisplaySize(32,32*ratio).setDepth((t.row+1)*32);}
 
   for(const r of battle.rocks||[])this.add.image((r.col+.5)*32,(r.row+.5)*32,'stone').setDisplaySize(32,32).setDepth((r.row+1)*32);
-  for(const box of battle.boxes||[]){const image=this.add.image(box.x,box.y,'box').setDisplaySize(32,32).setDepth(box.y+16);this.boxSprites.set(box.id,image);}
+  for(const box of battle.boxes||[]){const image=this.add.image(box.x,box.y,'box').setDisplaySize(32,32).setDepth(box.y+16);this.boxSprites.set(box.id,image);const back=this.add.rectangle(box.x,box.y-25,28,5,0x101820).setDepth(10000).setVisible(false),fill=this.add.rectangle(box.x-12,box.y-26,24,3,0xffd879).setOrigin(0).setDepth(10001).setVisible(false);this.boxProgress.set(box.id,{back,fill});}
   const e=battle.exit;
   this.exitTint=this.add.image(e.x+e.width/2,e.y+e.height/2,'exit-zone').setTint(0xffd84a);
   // Phaser's built-in Glow FX (WebGL); the filled zone remains visible on Canvas.
@@ -187,18 +188,22 @@ class GameScene extends Phaser.Scene{
  }
  update(time,delta){
   if(!mode||phase!=='BATTLE'||!battle)return;
-  const k=this.keys,input={left:k.A.isDown,right:k.D.isDown,up:k.W.isDown,down:k.S.isDown,sprint:k.SHIFT.isDown};
+  const k=this.keys,input={left:k.A.isDown,right:k.D.isDown,up:k.W.isDown,down:k.S.isDown,sprint:k.SHIFT.isDown,interact:k.E.isDown};
   const meBefore=players.find(p=>p.id===selfId),nearby=meBefore?nearestBox(battle,meBefore):null;
   if(mode==='solo'){
    const now=performance.now();let remaining=Math.min(1,(now-(this.lastSimulation??now))/1000);this.lastSimulation=now;
    while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){phase='PREPARATION';battle=null;finishBattle(route);players.forEach(p=>p.ready=false);this.refresh();return;}}
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
   const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();this.actors.delete(id);}
-  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17);}
+  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId);}
   const me=players.find(p=>p.id===selfId);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
-  for(const box of battle.boxes||[]){const image=this.boxSprites.get(box.id);if(image)image.setAlpha(box.opened?.28:1).setTint(box.opened?0x7f8b8e:0xffffff);}
+  for(const box of battle.boxes||[]){
+   const image=this.boxSprites.get(box.id);if(image)image.setAlpha(box.opened?.28:1).setTint(box.opened?0x7f8b8e:0xffffff);
+   const progress=box.opened?0:Math.max(0,...players.filter(p=>p.lootBoxId===box.id).map(p=>p.lootProgress||0)),bar=this.boxProgress.get(box.id);
+   if(bar){bar.back.setVisible(progress>0);bar.fill.setVisible(progress>0).setScale(progress,1);}
+  }
   for(const item of ITEMS)this.inventoryCounts.get(item.id)?.setText(String(me?.inventory?.[item.id]||0));
-  this.boxHint?.setText(nearby?'E：アイテムボックスを開ける':'');
+  this.boxHint?.setText(nearby?'E長押し（1秒）：アイテムボックスを開ける':'');
   const all=battle.inside===players.length&&players.length>0,color=all?0x51baff:battle.inside>0?0xbaff45:0xffd84a;
   this.exitTint?.setTint(color);
   if(this.exitGlow){this.exitGlow.color=color;this.exitGlow.outerStrength=4+Math.sin(time/240)*.7;}

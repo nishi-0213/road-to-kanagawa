@@ -1,5 +1,4 @@
-import {createRoute,selectNode,finishBattle} from '../../shared/route.js';
-import {openBox} from '../../shared/items.js';
+import {createRoute,upgradeRoute,selectNode,finishBattle} from '../../shared/route.js';
 import {createBattle,stepBattle} from '../../shared/battle.js';
 export default {
   async fetch(request,env){
@@ -29,9 +28,8 @@ export class GameRoom{
       for(const ws of sockets){if(!ws.deserializeAttachment()){const slot=[1,2,3,4].find(n=>!used.has(n));used.add(slot);ws.serializeAttachment({id:crypto.randomUUID(),slot,ready:false});}}
       this.initialized=await ctx.storage.get('initialized')===true;
       this.phase=await ctx.storage.get('phase')||'PREPARATION';
-      const savedRoute=await ctx.storage.get('route');this.route=savedRoute||createRoute();
-      if(savedRoute?.nodes.some(n=>!n.trait)){const fresh=createRoute();this.route.nodes=this.route.nodes.map(n=>({...fresh.nodes[n.id],...n}));await ctx.storage.put('route',this.route);}
-      if(!savedRoute)await ctx.storage.put('route',this.route);
+      const savedRoute=await ctx.storage.get('route');this.route=upgradeRoute(savedRoute);
+      if(savedRoute?.version!==2)await ctx.storage.put('route',this.route);
       if(!this.sockets().length){this.phase='PREPARATION';this.route=createRoute();await ctx.storage.put({phase:this.phase,route:this.route});}
       if(this.phase==='BATTLE'){this.battle=await ctx.storage.get('battle');if(this.battle){this.battle.escape=0;this.startTimer();}else{this.phase='PREPARATION';await ctx.storage.put('phase',this.phase);}}
     });
@@ -82,7 +80,9 @@ export class GameRoom{
     for(const [id,input] of this.inputs)if(now-input.at>250)this.inputs.delete(id);
     const players=this.players();
     if(!players.length){this.stopTimer();return;}
+    const openedBefore=(this.battle.boxes||[]).filter(box=>box.opened).length;
     const complete=stepBattle(this.battle,players,this.inputs,dt);
+    if((this.battle.boxes||[]).filter(box=>box.opened).length>openedBefore)this.ctx.waitUntil(this.ctx.storage.put('battle',this.battle));
     for(const ws of this.sockets()){const p=players.find(p=>p.id===ws.deserializeAttachment().id);if(p)ws.serializeAttachment(p);}
     if(complete){
       this.phase='PREPARATION';this.battle=null;finishBattle(this.route);this.stopTimer();
@@ -100,14 +100,9 @@ export class GameRoom{
         await this.ctx.storage.put('route',this.route);this.broadcast();
       }return;
     }
-    if(message?.type==='open_box'){
-      if(this.phase==='BATTLE'&&typeof message.id==='string'){
-        const player=ws.deserializeAttachment();
-        if(openBox(this.battle,player,message.id)){ws.serializeAttachment(player);await this.ctx.storage.put('battle',this.battle);this.broadcast();}
-      }return;
-    }
+    if(message?.type==='open_box')return; // Older clients cannot bypass the timed interaction.
     if(message?.type==='input'){
-      if(this.phase==='BATTLE'){const id=ws.deserializeAttachment().id;this.inputs.set(id,{left:message.left===true,right:message.right===true,up:message.up===true,down:message.down===true,sprint:message.sprint===true,at:Date.now()});}return;
+      if(this.phase==='BATTLE'){const id=ws.deserializeAttachment().id;this.inputs.set(id,{left:message.left===true,right:message.right===true,up:message.up===true,down:message.down===true,sprint:message.sprint===true,interact:message.interact===true,at:Date.now()});}return;
     }
     if(message?.type!=='ready'||typeof message.ready!=='boolean'){ws.close(1008,'Invalid action');return;}
     if(this.phase!=='PREPARATION'||this.route.canAdvance||this.route.finished)return;

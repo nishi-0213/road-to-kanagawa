@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createBattle,SIZES} from '../shared/battle.js';
-import {ITEMS,createInventory,openBox,nearestBox} from '../shared/items.js';
+import {ITEMS,createInventory,openBox,nearestBox,stepLoot} from '../shared/items.js';
 import {canStand} from '../shared/terrain.js';
 const make=()=>({id:'a',slot:1,inventory:createInventory()});
 test('boxes are distinct, spaced, on reachable tiles and away from spawn and exit in all biome sizes',()=>{
@@ -31,4 +31,16 @@ test('distance and obstruction validation, concurrent claim has a single owner, 
 
 test('each battle creates exactly 3, 4 or 5 boxes according to the count draw',()=>{
  for(let desired=3;desired<=5;desired++){let call=0;const random=()=>{call++;return call===4?(desired-3+.1)/3:.4;};const map=createBattle([make()],random);assert.equal(map.boxes.length,desired);}
+});
+
+test('looting requires a full uninterrupted second, displays progress and resets on release or range loss',()=>{
+ const map={trees:[],rocks:[],boxes:[{id:'box',x:64,y:64,opened:false}]},p={...make(),x:64,y:64},input=new Map([[p.id,{interact:true}]]);
+ for(let i=0;i<10;i++)stepLoot(map,[p],input,.05,()=>.1);assert.ok(p.lootProgress>.49&&p.lootProgress<.51);assert.equal(map.boxes[0].opened,false);
+ stepLoot(map,[p],new Map(),.05);assert.equal(p.lootProgress,0);assert.equal(p.lootBoxId,null);
+ for(let i=0;i<19;i++)stepLoot(map,[p],input,.05,()=>.1);assert.equal(map.boxes[0].opened,false);p.x=200;stepLoot(map,[p],input,.05);assert.equal(p.lootProgress,0);
+ p.x=64;for(let i=0;i<19;i++)stepLoot(map,[p],input,.05,()=>.1);assert.equal(map.boxes[0].opened,false);assert.equal(stepLoot(map,[p],input,.05,()=>.1),true);assert.equal(map.boxes[0].opened,true);assert.equal(p.inventory.food,1);assert.equal(p.lootProgress,0);
+});
+test('simultaneous timed loot still awards one player exactly once',()=>{
+ const map={trees:[],rocks:[],boxes:[{id:'box',x:64,y:64,opened:false}]},a={...make(),x:64,y:64},b={...make(),id:'b',x:64,y:64},inputs=new Map([[a.id,{interact:true}],[b.id,{interact:true}]]);
+ for(let i=0;i<20;i++)stepLoot(map,[a,b],inputs,.05,()=>.9);assert.equal(a.inventory.rifle+b.inventory.rifle,1);assert.equal(b.lootProgress,0);for(let i=0;i<40;i++)stepLoot(map,[a,b],inputs,.05,()=>.9);assert.equal(a.inventory.rifle+b.inventory.rifle,1);
 });

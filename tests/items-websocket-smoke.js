@@ -18,10 +18,12 @@ try{
   timers.push(setInterval(()=>{const me=p.state.players.find(x=>x.id===p.state.selfId);while(index<path.length-1&&Math.hypot(me.x-path[index].x,me.y-path[index].y)<6)index++;const t=path[index];send(p,{type:'input',right:me.x<t.x-3,left:me.x>t.x+3,up:me.y>t.y+3,down:me.y<t.y-3});},50));
  }
  await until(()=>group.every(p=>{const me=p.state.players.find(x=>x.id===p.state.selfId);return Math.hypot(me.x-target.x,me.y-target.y)<12;}),30000);timers.forEach(clearInterval);group.forEach(p=>send(p,{type:'input'}));
- group.forEach(p=>send(p,{type:'open_box',id:target.id,item:'rifle',quantity:999}));
- await until(()=>group.every(p=>p.state.battle.boxes.find(b=>b.id===target.id).opened));
+ group.forEach(p=>send(p,{type:'open_box',id:target.id,item:'rifle',quantity:999}));await new Promise(r=>setTimeout(r,120));assert.ok(!first.state.battle.boxes.find(b=>b.id===target.id).opened,'instant open cannot bypass timer');
+ const hold=setInterval(()=>group.forEach(p=>send(p,{type:'input',interact:true,progress:999,item:'rifle',quantity:999})),50);timers.push(hold);
+ await until(()=>first.state.players.every(p=>p.lootProgress>.2));assert.ok(!first.state.battle.boxes.find(b=>b.id===target.id).opened);assert.ok(first.state.players.every(p=>total(p.inventory)===0));
+ await until(()=>group.every(p=>p.state.battle.boxes.find(b=>b.id===target.id).opened));clearInterval(hold);group.forEach(p=>send(p,{type:'input'}));
  const state=first.state,box=state.battle.boxes.find(b=>b.id===target.id);assert.ok(['food','fuel','knife','rifle'].includes(box.loot.item));assert.ok(box.loot.quantity>=1&&box.loot.quantity<=4);if(['knife','rifle'].includes(box.loot.item))assert.equal(box.loot.quantity,1);
  assert.equal(state.players.filter(p=>total(p.inventory)>0).length,1);assert.equal(state.players.reduce((sum,p)=>sum+total(p.inventory),0),box.loot.quantity);
  const before=JSON.stringify(state.players.map(p=>p.inventory));group.forEach(p=>send(p,{type:'open_box',id:target.id}));await new Promise(r=>setTimeout(r,150));assert.equal(JSON.stringify(first.state.players.map(p=>p.inventory)),before);assert.ok(first.state.battle.boxes.filter(b=>b.id!==target.id).every(b=>!b.loot));
- console.log('PASS: shared boxes and rocks, unopened loot hidden, distance validation, server collision-aware movement, concurrent single claim, correct inventory and quantity, repeated-open rejection');
+ console.log('PASS: shared boxes and rocks, unopened loot hidden, distance validation, server collision-aware movement, one-second server timer and progress, concurrent single claim, correct inventory and quantity, repeated-open rejection');
 }finally{timers.forEach(clearInterval);group.forEach(p=>p.ws.close());}

@@ -35,3 +35,14 @@ export function openBox(map,p,id,random=Math.random){
  p.inventory??=createInventory();p.inventory[item]+=quantity;
  box.opened=true;box.openedBy=p.id;box.loot={item,quantity};return box.loot;
 }
+export function stepLoot(map,players,inputs,seconds,random=Math.random){
+ const dt=Math.min(.1,Math.max(0,seconds));let collected=false;
+ for(const player of players){
+  const box=inputs.get(player.id)?.interact===true?nearestBox(map,player):null;
+  if(!box){player.lootBoxId=null;player.lootProgress=0;continue;}
+  if(player.lootBoxId!==box.id){player.lootBoxId=box.id;player.lootProgress=0;}
+  player.lootProgress=Math.min(1,(player.lootProgress||0)+dt);
+  if(player.lootProgress>=1-1e-8){if(openBox(map,player,box.id,random))collected=true;player.lootBoxId=null;player.lootProgress=0;}
+ }
+ return collected;
+}
