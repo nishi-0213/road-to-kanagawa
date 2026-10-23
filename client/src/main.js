@@ -1,3 +1,4 @@
+import {createOutfit,updateOutfit,createHeldItem,updateHeldItem} from './player-outfit.js';
 import {cycleItem,renderCombatEffects,updateCombatHud,updateCombatAim} from './combat-ui.js';
 import {availableItems} from '../../shared/combat.js';
 import {drawPreparationInventory,installPreparationDrag} from './preparation-ui.js';
@@ -217,7 +218,9 @@ class GameScene extends Phaser.Scene{
    const sprite=this.add.image(p.x,p.y,'player').setDisplaySize(32,32).setDepth(3);
    const label=this.text(p.x,p.y-25,`P${p.slot}${p.id===selfId?' ●':''}`,{fontSize:'12px',color:p.id===selfId?'#fff4ad':'#ffffff'}).setOrigin(.5).setDepth(4);
    const healBack=this.add.rectangle(p.x,p.y-30,28,5,0x101820).setDepth(10002).setVisible(false),healBar=this.add.rectangle(p.x-12,p.y-31,24,3,0x89e6ac).setOrigin(0).setDepth(10003).setVisible(false);
-   this.actors.set(p.id,{sprite,label,healBack,healBar});
+   const outfit=createOutfit(this,sprite);updateOutfit(sprite,outfit,p);
+   const heldItem=createHeldItem(this,sprite);
+   this.actors.set(p.id,{sprite,label,healBack,healBar,outfit,heldItem});
   }
   const me=this.actors.get(selfId)?.sprite;
   if(me){this.cameras.main.removeBounds();this.cameras.main.centerOn(me.x,me.y);this.cameras.main.startFollow(me,false,1,1,0,0);}
@@ -232,8 +235,8 @@ class GameScene extends Phaser.Scene{
    const now=performance.now();let remaining=Math.min(1,(now-(this.lastSimulation??now))/1000);this.lastSimulation=now;
    while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){preparation=finishBattleInventory(battle,players);phase='PREPARATION';battle=null;finishBattle(route);players.forEach(p=>p.ready=false);this.refresh();return;}}
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
-  const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();a.healBack.destroy();a.healBar.destroy();this.actors.delete(id);}
-  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId&&!(p.healProgress>0));a.healBack.setPosition(a.sprite.x,a.sprite.y-30).setVisible(p.healProgress>0);a.healBar.setPosition(a.sprite.x-12,a.sprite.y-31).setScale((p.healProgress||0)/3,1).setVisible(p.healProgress>0);}
+  const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();a.healBack.destroy();a.healBar.destroy();a.outfit.forEach(layer=>layer.destroy());a.heldItem.destroy();this.actors.delete(id);}
+  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);updateOutfit(a.sprite,a.outfit,p);if(p.id===selfId)updateHeldItem(a,p,this.selectedItem,Math.atan2(aim.y-p.y,aim.x-p.x));else updateHeldItem(a,p);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId&&!(p.healProgress>0));a.healBack.setPosition(a.sprite.x,a.sprite.y-30).setVisible(p.healProgress>0);a.healBar.setPosition(a.sprite.x-12,a.sprite.y-31).setScale((p.healProgress||0)/3,1).setVisible(p.healProgress>0);}
   renderCombatEffects(this,battle);
   const me=players.find(p=>p.id===selfId);updateCombatHud(this,me);updateCombatAim(this,me,input.secondary);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
   for(const box of battle.boxes||[]){

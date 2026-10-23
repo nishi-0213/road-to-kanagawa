@@ -1,4 +1,5 @@
-import {getDefense} from '../../shared/preparation.js';
+import {createOutfit,updateOutfit} from './player-outfit.js';
+import {getDefense,EQUIPMENT_SLOTS} from '../../shared/preparation.js';
 import {ITEMS} from '../../shared/items.js';
 
 export function drawPreparationInventory(scene,players,selfId,state){
@@ -30,13 +31,21 @@ export function drawPreparationInventory(scene,players,selfId,state){
  text(left+lootWidth+gap+trashWidth/2,top+36,'捨てる',{fontSize:'22px',color:'#f1c8b9'}).setOrigin(.5);text(left+lootWidth+gap+trashWidth/2,top+69,'ドロップで削除',{fontSize:'11px',color:'#d3aaa2'}).setOrigin(.5);
  const panelTop=top+stripHeight+38,panelGap=14,panelWidth=Math.min(360,(mainWidth-panelGap*(players.length-1))/players.length),panelHeight=Math.max(68,height-panelTop-20);
  players.forEach((player,order)=>{
-  const x=left+order*(panelWidth+panelGap),mine=player.id===selfId,slots=player.inventorySlots||Array(12).fill(null),rows=Math.ceil(slots.length/4),cell=Math.max(16,Math.min(52,(panelWidth-20)/4,(panelHeight-42)/rows));
+  const x=left+order*(panelWidth+panelGap),mine=player.id===selfId,slots=player.inventorySlots||Array(12).fill(null),rows=Math.ceil(slots.length/4),cell=Math.max(16,Math.min(52,(panelWidth-20)/4,(panelHeight-50)/(rows+EQUIPMENT_SLOTS.length)));
   text(x,panelTop-25,`プレイヤー${player.slot} アイテム欄${mine?'（あなた）':''}`,{fontSize:`${Math.max(9,Math.min(16,(panelWidth-8)/(mine?19:14)))}px`,color:mine?'#d0e8b3':'#a1b3be'});
   rect(x,panelTop,panelWidth,panelHeight,0x11222d).setStrokeStyle(1,mine?0x9cbf94:0x455d6c);
   scene.inventoryPanels.push({playerId:player.id,x,y:panelTop,width:panelWidth,height:panelHeight});
   text(x+10,panelTop+8,`防御力 ${getDefense(player)}`,{fontSize:'13px',color:'#bed5f3'});
   const gridX=x+(panelWidth-cell*4)/2,gridY=panelTop+34;
   slots.forEach((item,index)=>slot('inventory',index,gridX+(index%4+.5)*cell,gridY+(Math.floor(index/4)+.5)*cell,cell,item,mine,player.id));
+  const equipmentY=gridY+rows*cell+8;
+  EQUIPMENT_SLOTS.forEach((equipment,index)=>{
+   const y=equipmentY+(index+.5)*cell;
+   text(gridX-8,y,equipment.name,{fontSize:`${Math.min(18,cell*.45)}px`,color:'#d3e3f0'}).setOrigin(1,.5);
+   slot('equipment',index,gridX+cell*.5,y,cell,player.equipmentSlots?.[index]||null,mine,player.id);
+  });
+  const preview=scene.add.image(gridX+cell*2.5,equipmentY+cell*1.5,'player').setDisplaySize(Math.min(64,cell*1.6),Math.min(64,cell*1.6));scene.hud.add(preview);
+  const layers=createOutfit(scene,preview);for(const layer of layers)scene.hud.add(layer);updateOutfit(preview,layers,player);
  });
 }
 

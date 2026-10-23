@@ -16,6 +16,8 @@ export function stepCombat(map,players,inputs,dt){
   player.hp=Math.max(0,Math.min(MAX_HP,Number.isFinite(player.hp)?player.hp:MAX_HP));
   player.attackCooldown=Math.max(0,(player.attackCooldown||0)-dt);
   const input=inputs.get(player.id)||{},selected=USABLE_ITEMS.includes(input.selected)&&itemCount(player,input.selected)>0?input.selected:null;
+  player.selectedItem=selected;
+  if(Number.isFinite(input.aimX)&&Number.isFinite(input.aimY))player.aimAngle=Math.atan2(input.aimY-player.y,input.aimX-player.x);
   if(!input.use||selected!=='medicine'){player.healProgress=0;player.healLatched=false;}
   const secondary=input.secondary===true&&selected==='knife'&&player.hp>0;
   if(!secondary){player.strongCharge=0;player.strongLatched=false;}

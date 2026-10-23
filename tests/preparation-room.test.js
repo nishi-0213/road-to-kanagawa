@@ -23,9 +23,14 @@ test('room handler enforces concurrent single claim, own-slot permissions, prepa
   assert.ok(winner.messages.at(-1).preparation.loot[1]);
   await room.webSocketMessage(a,JSON.stringify({type:'move_item',from:{area:'loot',index:2},to:{area:'inventory',index:1},itemId:'shared-pants',targetItemId:null,defense:999}));
   await room.webSocketMessage(b,JSON.stringify({type:'move_item',from:{area:'loot',index:3},to:{area:'inventory',index:1},itemId:'shared-hat',targetItemId:null}));
+  await room.webSocketMessage(a,JSON.stringify({type:'move_item',from:{area:'inventory',index:1},to:{area:'equipment',index:2},itemId:'shared-pants',targetItemId:null}));
+  await room.webSocketMessage(b,JSON.stringify({type:'move_item',from:{area:'inventory',index:1},to:{area:'equipment',index:0},itemId:'shared-hat',targetItemId:null}));
+  assert.equal(a.player.equipmentSlots[2].item,'pants');assert.equal(b.messages.at(-1).players.find(p=>p.id==='a').equipmentSlots[2].item,'pants');
+  await room.webSocketMessage(a,JSON.stringify({type:'move_item',from:{area:'equipment',index:2},to:{area:'equipment',index:0},itemId:'shared-pants',targetItemId:null}));assert.equal(a.player.equipmentSlots[2].item,'pants');assert.equal(a.player.equipmentSlots[0],null);
   assert.equal(a.player.defense,2);assert.equal(b.player.defense,1);assert.equal(b.messages.at(-1).players.find(p=>p.id==='a').defense,2);
   await room.webSocketMessage(a,JSON.stringify({type:'ready',ready:true}));await room.webSocketMessage(b,JSON.stringify({type:'ready',ready:true}));assert.equal(room.phase,'BATTLE');assert.deepEqual(room.route.battleStarted,[room.route.current]);assert.ok(room.preparation.loot.every(x=>!x));assert.equal(winner.player.inventory.knife,1);assert.equal(winner.player.inventorySlots[0].id,'shared-knife');
   await room.webSocketMessage(winner,JSON.stringify({type:'move_item',from:{area:'inventory',index:0},to:{area:'trash'},itemId:'shared-knife'}));assert.equal(winner.player.inventory.knife,1,'moves during battle are ignored');
+  await room.webSocketMessage(a,JSON.stringify({type:'move_item',from:{area:'equipment',index:2},to:{area:'trash'},itemId:'shared-pants'}));assert.equal(a.player.equipmentSlots[2].item,'pants','cannot remove equipment during battle');
   room.stopTimer();room.phase='PREPARATION';a.player.ready=false;b.player.ready=false;
   await room.webSocketMessage(a,JSON.stringify({type:'ready',ready:true}));await room.webSocketMessage(b,JSON.stringify({type:'ready',ready:true}));
   assert.equal(room.phase,'PREPARATION','a used node cannot restart even if canAdvance is false');assert.equal(a.player.ready,false);

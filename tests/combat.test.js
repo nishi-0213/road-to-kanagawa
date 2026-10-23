@@ -51,3 +51,9 @@ test('release, switching, invalid aim and insufficient stamina prevent an incomp
  tick(map,p,{...input,use:true},.5);assert.equal(map.effects.length,1,'right click takes precedence over normal attack');assert.equal(p.stamina,0);assert.equal(p.exhausted,true);
  const empty=ensureInventory({id:'empty',hp:100,stamina:1});tick(map,empty,input,.5);assert.equal(map.effects.length,1,'unowned knives cannot strong attack');
 });
+test('selected item and aim are retained for rendering without attacking; invalid selections cannot spoof carried gear',()=>{
+ const p=make(),map={};tick(map,p,{selected:'rifle',aimX:64,aimY:-100},.05);assert.equal(p.selectedItem,'rifle');assert.equal(p.aimAngle,-Math.PI/2);assert.equal(map.effects.length,0);
+ tick(map,p,{selected:'medicine',aimX:-100,aimY:64},.05);assert.equal(p.selectedItem,'medicine');assert.equal(p.aimAngle,Math.PI);
+ tick(map,p,{selected:'pants',aimX:Infinity,aimY:NaN},.05);assert.equal(p.selectedItem,null);assert.equal(p.aimAngle,Math.PI);
+ const empty=ensureInventory({id:'empty',hp:100});tick(map,empty,{selected:'rifle',aimX:100,aimY:100},.05);assert.equal(empty.selectedItem,null);
+});
