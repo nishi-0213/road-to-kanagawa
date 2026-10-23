@@ -1,8 +1,0 @@
-{
-  "name": "road-to-kanagawa",
-  "main": "server/src/index.js",
-  "compatibility_date": "2026-10-23",
-  "durable_objects": {"bindings": [{"name": "ROOMS", "class_name": "GameRoom"}]},
-  "migrations": [{"tag": "v1", "new_sqlite_classes": ["GameRoom"]}],
-  "assets": {"directory": "./dist", "binding": "ASSETS", "run_worker_first": ["/api/*"]}
-}
