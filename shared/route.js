@@ -14,14 +14,15 @@ export function createRoute(random=Math.random){
   if(stage>0)for(const from of layers[stage-1])for(const to of layer)edges.push({from,to});
   layers.push(layer);
  }
- return {version:2,nodes,edges,current:0,visited:[0],canAdvance:false,finished:false};
+ return {version:2,nodes,edges,current:0,visited:[0],battleStarted:[],canAdvance:false,finished:false};
 }
 export function upgradeRoute(route,random=Math.random){
- if(route?.version===2)return route;
+ if(route?.version===2){route.battleStarted??=route.visited.filter(id=>id!==route.current||route.canAdvance);return route;}
  const fresh=createRoute(random);if(!route?.nodes?.length)return fresh;
  const currentName=route.nodes[route.current]?.name||CITIES[0];
  fresh.current=fresh.nodes.find(n=>n.name===currentName)?.id||0;
  fresh.visited=[...new Set((route.visited||[0]).map(id=>fresh.nodes.find(n=>n.name===route.nodes[id]?.name)?.id).filter(id=>id!==undefined))];
+ fresh.battleStarted=fresh.visited.filter(id=>id!==fresh.current||route.canAdvance);
  fresh.canAdvance=Boolean(route.canAdvance);fresh.finished=Boolean(route.finished);
  for(const n of fresh.nodes){const previous=route.nodes.find(old=>old.name===n.name);if(previous?.trait)n.trait=previous.trait;if(previous?.fuelCost)n.fuelCost=previous.fuelCost;}
  return fresh;
@@ -35,3 +36,6 @@ export function selectNode(route,target){
 }
 export function finishBattle(route){if(route&&!route.finished)route.canAdvance=true;}
 export function nodeInfo(node,playerCount){return {name:node.name,trait:TRAITS[node.trait]||'通常',fuel:node.fuelCost||1,food:Math.max(1,playerCount)};}
+
+export function canStartBattle(route){return Boolean(route&&!route.canAdvance&&!route.finished&&!(route.battleStarted||[]).includes(route.current));}
+export function startBattle(route){if(!canStartBattle(route))return false;(route.battleStarted??=[]).push(route.current);return true;}

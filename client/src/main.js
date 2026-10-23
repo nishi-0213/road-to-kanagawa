@@ -1,6 +1,6 @@
 import {drawPreparationInventory,installPreparationDrag} from './preparation-ui.js';
 import {ensureInventory,createPreparation,finishBattleInventory,discardUnclaimed,movePreparationItem} from '../../shared/preparation.js';
-import {createRoute,nextNodes,selectNode,finishBattle,nodeInfo,CITIES,ringCount} from '../../shared/route.js';
+import {createRoute,nextNodes,selectNode,finishBattle,nodeInfo,CITIES,ringCount,canStartBattle,startBattle} from '../../shared/route.js';
 import {ITEMS,nearestBox} from '../../shared/items.js';
 import Phaser from 'phaser';
 import './style.css';
@@ -95,7 +95,7 @@ class GameScene extends Phaser.Scene{
  preparation(){
   this.drawRoute();
   drawPreparationInventory(this,players,selfId,preparation);
-  const startY=Math.max(145,this.scale.height/3+85),locked=route?.canAdvance||route?.finished;
+  const startY=Math.max(145,this.scale.height/3+85),locked=!canStartBattle(route);
   const width=Math.min(230,this.scale.width-40),x=this.scale.width-20-width/2;
   const gap=Math.min(70,Math.max(52,(this.scale.height-startY)/Math.max(1,players.length)));
   players.forEach((player,index)=>{
@@ -104,7 +104,7 @@ class GameScene extends Phaser.Scene{
    this.hud.add(background);this.hud.add(this.text(x,y,`プレイヤー${player.slot}${mine?'（あなた）':''}\n${player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
    if(locked)background.setAlpha(.4);
    if(mine&&!locked){background.setInteractive({useHandCursor:true});background.on('pointerdown',()=>{
-    if(mode==='solo'){discardUnclaimed(preparation,players);battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
+    if(mode==='solo'){if(!startBattle(route))return;discardUnclaimed(preparation,players);battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
     else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ready',ready:!player.ready}));
    });}
   });

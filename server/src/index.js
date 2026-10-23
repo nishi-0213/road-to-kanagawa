@@ -1,5 +1,5 @@
 import {ensureInventory,createPreparation,finishBattleInventory,discardUnclaimed,movePreparationItem} from '../../shared/preparation.js';
-import {createRoute,upgradeRoute,selectNode,finishBattle} from '../../shared/route.js';
+import {createRoute,upgradeRoute,selectNode,finishBattle,canStartBattle,startBattle} from '../../shared/route.js';
 import {createBattle,stepBattle} from '../../shared/battle.js';
 export default {
   async fetch(request,env){
@@ -34,7 +34,7 @@ export class GameRoom{
       const savedRoute=await ctx.storage.get('route');this.route=upgradeRoute(savedRoute);
       if(savedRoute?.version!==2)await ctx.storage.put('route',this.route);
       if(!this.sockets().length){this.phase='PREPARATION';this.route=createRoute();this.preparation=createPreparation();await ctx.storage.put({phase:this.phase,route:this.route,preparation:this.preparation});}
-      if(this.phase==='BATTLE'){this.battle=await ctx.storage.get('battle');if(this.battle){this.battle.escape=0;this.startTimer();}else{this.phase='PREPARATION';await ctx.storage.put('phase',this.phase);}}
+      if(this.phase==='BATTLE'){if(!this.route.battleStarted.includes(this.route.current))this.route.battleStarted.push(this.route.current);await ctx.storage.put('route',this.route);this.battle=await ctx.storage.get('battle');if(this.battle){this.battle.escape=0;this.startTimer();}else{this.phase='PREPARATION';await ctx.storage.put('phase',this.phase);}}
     });
   }
   async fetch(request){
@@ -64,7 +64,8 @@ export class GameRoom{
   async advance(){
     const players=this.players();
     if(!players.length){this.phase='PREPARATION';this.battle=null;this.route=createRoute();this.preparation=createPreparation();this.stopTimer();await this.ctx.storage.put({phase:this.phase,route:this.route,preparation:this.preparation});}
-    else if(this.phase==='PREPARATION' && !this.route.canAdvance&&!this.route.finished&&players.every(p=>p.ready)){
+    else if(this.phase==='PREPARATION' && canStartBattle(this.route)&&players.every(p=>p.ready)){
+      startBattle(this.route);
       discardUnclaimed(this.preparation,players);
       this.phase='BATTLE';this.battle=createBattle(players);this.battle.city=this.route.nodes[this.route.current].name;
       for(const ws of this.sockets())ws.serializeAttachment(players.find(p=>p.id===ws.deserializeAttachment().id));
@@ -119,7 +120,7 @@ export class GameRoom{
       if(this.phase==='BATTLE'){const id=ws.deserializeAttachment().id;this.inputs.set(id,{left:message.left===true,right:message.right===true,up:message.up===true,down:message.down===true,sprint:message.sprint===true,interact:message.interact===true,at:Date.now()});}return;
     }
     if(message?.type!=='ready'||typeof message.ready!=='boolean'){ws.close(1008,'Invalid action');return;}
-    if(this.phase!=='PREPARATION'||this.route.canAdvance||this.route.finished)return;
+    if(this.phase!=='PREPARATION'||!canStartBattle(this.route))return;
     const player=ws.deserializeAttachment();
     if(player.ready===message.ready)return;
     // Identity always comes from the socket; clients cannot ready another player.

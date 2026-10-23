@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {CITIES,createRoute,upgradeRoute,nextNodes,selectNode,finishBattle,TRAITS,nodeInfo,ringCount} from '../shared/route.js';
+import {CITIES,createRoute,upgradeRoute,nextNodes,selectNode,finishBattle,TRAITS,nodeInfo,ringCount,canStartBattle,startBattle} from '../shared/route.js';
 test('every path visits all thirteen cities in order, with adjacent-stage branches and merges only',()=>{
  for(let seed=1;seed<=100;seed++){
   let n=seed;const random=()=>{n=(Math.imul(n,1664525)+1013904223)>>>0;return n/4294967296;};const route=createRoute(random);
@@ -30,4 +30,20 @@ test('trait probabilities, fixed Fuji event, fuel range and per-player food rema
  let seed=5;const rng=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;},counts={normal:0,enemies:0,resources:0,trader:0};let total=0;
  for(let i=0;i<1000;i++)for(const node of createRoute(rng).nodes)if(node.name!=='富士'){counts[node.trait]++;total++;}
  assert.ok(counts.normal/total>.67&&counts.normal/total<.73);for(const key of ['enemies','resources','trader'])assert.ok(counts[key]/total>.08&&counts[key]/total<.12);
+});
+
+test('each node permits only one battle start, including restored routes',()=>{
+ const route=createRoute(()=>.4);assert.equal(canStartBattle(route),true);
+ assert.equal(startBattle(route),true);assert.equal(startBattle(route),false);
+ const restored=upgradeRoute(JSON.parse(JSON.stringify(route)));
+ assert.equal(canStartBattle(restored),false);
+ finishBattle(restored);assert.equal(canStartBattle(restored),false);
+ assert.equal(selectNode(restored,nextNodes(restored)[0]),true);
+ assert.equal(canStartBattle(restored),true);assert.equal(startBattle(restored),true);assert.equal(startBattle(restored),false);
+ assert.equal(restored.battleStarted.length,2);
+});
+test('old completed nodes migrate as already used while an unplayed selected node remains available',()=>{
+ const old=createRoute(()=>.4);finishBattle(old);delete old.battleStarted;
+ assert.equal(canStartBattle(upgradeRoute(old)),false);assert.deepEqual(old.battleStarted,[0]);
+ selectNode(old,nextNodes(old)[0]);assert.equal(canStartBattle(old),true);
 });

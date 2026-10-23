@@ -20,7 +20,10 @@ test('room handler enforces concurrent single claim, own-slot permissions, prepa
   const winner=a.player.inventory.knife?a:b,loser=winner===a?b:a;
   await room.webSocketMessage(loser,JSON.stringify({...action,from:{area:'inventory',index:0,playerId:winner.player.id},to:{area:'trash'},itemId:'shared-knife'}));assert.equal(winner.player.inventory.knife,1);
   assert.ok(winner.messages.at(-1).preparation.loot[1]);
-  await room.webSocketMessage(a,JSON.stringify({type:'ready',ready:true}));await room.webSocketMessage(b,JSON.stringify({type:'ready',ready:true}));assert.equal(room.phase,'BATTLE');assert.ok(room.preparation.loot.every(x=>!x));assert.equal(winner.player.inventory.knife,1);assert.equal(winner.player.inventorySlots[0].id,'shared-knife');
+  await room.webSocketMessage(a,JSON.stringify({type:'ready',ready:true}));await room.webSocketMessage(b,JSON.stringify({type:'ready',ready:true}));assert.equal(room.phase,'BATTLE');assert.deepEqual(room.route.battleStarted,[room.route.current]);assert.ok(room.preparation.loot.every(x=>!x));assert.equal(winner.player.inventory.knife,1);assert.equal(winner.player.inventorySlots[0].id,'shared-knife');
   await room.webSocketMessage(winner,JSON.stringify({type:'move_item',from:{area:'inventory',index:0},to:{area:'trash'},itemId:'shared-knife'}));assert.equal(winner.player.inventory.knife,1,'moves during battle are ignored');
+  room.stopTimer();room.phase='PREPARATION';a.player.ready=false;b.player.ready=false;
+  await room.webSocketMessage(a,JSON.stringify({type:'ready',ready:true}));await room.webSocketMessage(b,JSON.stringify({type:'ready',ready:true}));
+  assert.equal(room.phase,'PREPARATION','a used node cannot restart even if canAdvance is false');assert.equal(a.player.ready,false);
  }finally{room.stopTimer();}
 });
