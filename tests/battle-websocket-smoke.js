@@ -10,10 +10,20 @@ try{
  assert.ok(group.every(p=>p.state.battle.id===group[0].state.battle.id));assert.ok(group.every(p=>p.state.players[0].y>p.state.battle.rows*32-100));
  // Coordinates submitted by a client never override authoritative movement.
  const first=group[0],initial=first.state.players[0].x;send(first,{type:'input',x:99999,y:0});await new Promise(r=>setTimeout(r,150));assert.equal(first.state.players[0].x,initial);
- const move=p=>setInterval(()=>{if(p.state.phase!=='BATTLE')return;const me=p.state.players.find(x=>x.id===p.state.selfId),e=p.state.battle.exit;send(p,{type:'input',right:me.x<e.x+24,left:me.x>e.x+40,up:me.y>56,down:me.y<40,sprint:true});},50);
+ const move=p=>{
+  const map=p.state.battle,me=p.state.players.find(x=>x.id===p.state.selfId),blocked=new Set(map.trees.map(t=>t.row*map.cols+t.col));
+  const start=Math.floor(me.y/32)*map.cols+Math.floor(me.x/32),goal=map.cols+(map.cols-2),parents=new Map([[start,null]]),queue=[start];
+  for(let i=0;i<queue.length&&!parents.has(goal);i++){
+   const cell=queue[i],x=cell%map.cols,y=Math.floor(cell/map.cols);
+   for(const [dx,dy] of [[0,-1],[1,0],[-1,0],[0,1]]){const nx=x+dx,ny=y+dy,n=ny*map.cols+nx;if(nx<0||ny<0||nx>=map.cols||ny>=map.rows||blocked.has(n)||parents.has(n))continue;parents.set(n,cell);queue.push(n);}
+  }
+  assert.ok(parents.has(goal));const path=[];for(let n=goal;n!==null;n=parents.get(n))path.unshift({x:(n%map.cols)*32+16,y:Math.floor(n/map.cols)*32+16});
+  let index=0;
+  return setInterval(()=>{if(p.state.phase!=='BATTLE')return;const me=p.state.players.find(x=>x.id===p.state.selfId);while(index<path.length-1&&Math.hypot(me.x-path[index].x,me.y-path[index].y)<6)index++;const t=path[index];send(p,{type:'input',right:me.x<t.x-3,left:me.x>t.x+3,up:me.y>t.y+3,down:me.y<t.y-3,sprint:true});},50);
+ };
  timers=group.slice(0,3).map(move);
- await until(()=>first.state.battle?.inside===3,30000);await new Promise(r=>setTimeout(r,1200));assert.equal(first.state.phase,'BATTLE');assert.equal(first.state.battle.escape,0);
- timers.push(move(group[3]));await until(()=>first.state.battle?.inside===4,30000);await until(()=>first.state.battle?.escape>1,5000);assert.equal(first.state.phase,'BATTLE');
+ await until(()=>first.state.battle?.inside===3,45000);await new Promise(r=>setTimeout(r,1200));assert.equal(first.state.phase,'BATTLE');assert.equal(first.state.battle.escape,0);
+ timers.push(move(group[3]));await until(()=>first.state.battle?.inside===4,45000);await until(()=>first.state.battle?.escape>1,5000);assert.equal(first.state.phase,'BATTLE');
  await until(()=>group.every(p=>p.state.phase==='PREPARATION'),5000);assert.ok(group.every(p=>p.state.players.every(x=>!x.ready)));assert.ok(group.every(p=>p.state.battle===null));
  group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));assert.ok(group.every(p=>p.state.players.every(x=>x.stamina===1)));console.log('PASS: shared random map, server movement and teleport rejection, stamina, 3/4 waiting, 4/4 timed escape, preparation reset and next round');
 }finally{timers.forEach(clearInterval);group.forEach(p=>p.ws.close());}

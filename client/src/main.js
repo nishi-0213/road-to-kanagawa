@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import {createBattle,stepBattle,TILE} from '../../shared/battle.js';
+import {BIOME_NAMES} from '../../shared/terrain.js';
 const form=document.querySelector('#login'),codeInput=document.querySelector('#code'),message=document.querySelector('#message');
 let socket=null,connecting=false,gameScene=null,mode=null,room='',count=0,connectionTimer,phase='PREPARATION',players=[],selfId=null,battle=null;
 function busy(value){connecting=value;form.querySelectorAll('button,input').forEach(el=>el.disabled=value);}
@@ -33,10 +34,12 @@ document.querySelector('#create').onclick=async()=>{
 };
 form.onsubmit=e=>{e.preventDefault();join(codeInput.value);};
 const invited=new URL(location.href).searchParams.get('room');if(invited)codeInput.value=invited.toUpperCase();
+const treeImages=import.meta.glob('../assets/**/*.{png,PNG}',{eager:true,query:'?url',import:'default'});
+const treeImage=Object.entries(treeImages).find(([name])=>/\/tree\.png$/i.test(name))?.[1];
 const playerImages=import.meta.glob('../assets/player.png',{eager:true,query:'?url',import:'default'});
 const STYLE={fontFamily:'sans-serif',fontSize:'16px',color:'#b8cbd7'};
 class GameScene extends Phaser.Scene{
- preload(){const url=Object.values(playerImages)[0];if(url)this.load.image('player',url);}
+ preload(){const url=Object.values(playerImages)[0];if(url)this.load.image('player',url);if(treeImage)this.load.image('tree',treeImage);}
  create(){
   gameScene=this;this.actors=new Map();this.lastSend=0;
   this.keys=this.input.keyboard.addKeys('W,A,S,D,SHIFT');
@@ -44,6 +47,7 @@ class GameScene extends Phaser.Scene{
   // A neutral temporary 32px figure is used only until the original PNG is available.
   if(!this.textures.exists('player')){const g=this.make.graphics({x:0,y:0,add:false});g.fillStyle(0xeef5f7);g.fillCircle(16,9,6);g.fillRoundedRect(10,16,12,11,2);g.fillRect(9,26,5,5);g.fillRect(18,26,5,5);g.generateTexture('player',32,32);g.destroy();}
   const ground=this.make.graphics({x:0,y:0,add:false});ground.fillStyle(0x344a38);ground.fillRect(0,0,32,32);ground.lineStyle(1,0x3c5540);ground.strokeRect(.5,.5,31,31);ground.fillStyle(0x4a6348);ground.fillRect(5,7,2,2);ground.fillRect(22,24,3,1);ground.generateTexture('ground',32,32);ground.destroy();
+  if(!this.textures.exists('tree')){const tree=this.make.graphics({x:0,y:0,add:false});tree.fillStyle(0x74563a);tree.fillRect(13,24,6,8);tree.fillStyle(0x1f432f);tree.fillCircle(16,14,13);tree.fillStyle(0x366444);tree.fillCircle(12,10,9);tree.generateTexture('tree',32,32);tree.destroy();}
   const zone=this.make.graphics({x:0,y:0,add:false});zone.fillStyle(0xffffff,.4);zone.fillRect(0,0,64,96);zone.lineStyle(2,0xffffff,1);zone.strokeRect(1,1,62,94);zone.generateTexture('exit-zone',64,96);zone.destroy();
   this.scale.on('resize',()=>this.refresh());this.refresh();
  }
@@ -53,7 +57,7 @@ class GameScene extends Phaser.Scene{
   const camera=this.cameras.main;camera.stopFollow();camera.setScroll(0,0);camera.removeBounds();camera.setZoom(1);
   if(!mode)return;
   if(phase==='BATTLE'&&battle)this.buildBattle();
-  this.hud=this.add.container(0,0).setScrollFactor(0).setDepth(100);
+  this.hud=this.add.container(0,0).setScrollFactor(0).setDepth(100000);
   this.hud.add(this.add.rectangle(0,0,this.scale.width,118,0x101820,.88).setOrigin(0));
   this.hud.add(this.text(20,16,phase==='BATTLE'?'戦闘フェーズ':'準備フェーズ',{fontSize:'26px',color:'#eff7fa'}));
   this.hud.add(this.text(20,54,mode==='solo'?'1人プレイ':`ルームコード：${room}　${count}/4人`));
@@ -63,11 +67,11 @@ class GameScene extends Phaser.Scene{
    copy.on('pointerdown',async()=>{const url=new URL(location.href);url.search='';url.searchParams.set('room',room);try{await navigator.clipboard.writeText(url.href);copy.setText('コピーしました');}catch{copy.setText('ルームコード：'+room);}});this.hud.add(copy);
   }
   if(phase==='BATTLE'){
-   this.hud.add(this.text(260,25,'WASD：移動 / Shift：ダッシュ',{fontSize:'14px'}));
+   this.hud.add(this.text(260,25,`${BIOME_NAMES[battle.biome]||'森林地帯'}　WASD：移動 / Shift：ダッシュ`,{fontSize:'14px'}));
    this.hud.add(this.text(260,54,'スタミナ',{fontSize:'14px'}));
    this.hud.add(this.add.rectangle(340,54,164,14,0x15202a).setOrigin(0).setStrokeStyle(1,0x66807b));
    this.staminaBar=this.add.rectangle(342,56,160,10,0x88ddbb).setOrigin(0);this.hud.add(this.staminaBar);
-   this.hud.add(this.text(260,84,'右上の脱出ゾーンへ全員で集合（3秒）',{fontSize:'14px'}));
+   this.hud.add(this.text(260,84,'右上の脱出ゾーンへ',{fontSize:'14px'}));
   }else this.preparation();
  }
  preparation(){
@@ -83,9 +87,36 @@ class GameScene extends Phaser.Scene{
    });}
   });
  }
+ drawMapFade(w,h,tint){
+  const name='map-fade';if(this.textures.exists(name))this.textures.remove(name);
+  const extent=128,texture=this.textures.createCanvas(name,w+extent*2,h+extent*2),ctx=texture.context;
+  const image=ctx.createImageData(texture.width,texture.height),data=image.data;
+  const base=[0x34,0x4a,0x38],mult=[(tint>>>16&255)/255,(tint>>>8&255)/255,(tint&255)/255];
+  for(let y=0;y<texture.height;y++)for(let x=0;x<texture.width;x++){
+   const dx=Math.max(extent-x,0,x-(extent+w-1)),dy=Math.max(extent-y,0,y-(extent+h-1));
+   const distance=Math.hypot(dx,dy);if(!distance||distance>=extent)continue;
+   const t=1-distance/extent,alpha=t*t*(3-2*t),i=(y*texture.width+x)*4;
+   data[i]=base[0]*mult[0];data[i+1]=base[1]*mult[1];data[i+2]=base[2]*mult[2];data[i+3]=Math.round(alpha*255);
+  }
+  ctx.putImageData(image,0,0);texture.refresh();this.add.image(-extent,-extent,name).setOrigin(0).setDepth(-1);
+ }
  buildBattle(){
   const w=battle.cols*TILE,h=battle.rows*TILE;
-  this.add.tileSprite(0,0,w,h,'ground').setOrigin(0);
+  const tint=battle.biome==='urban'?0xa2a7a8:battle.biome==='highway'?0xb9bd97:0xffffff;
+  this.drawMapFade(w,h,tint);
+  this.add.tileSprite(0,0,w,h,'ground').setOrigin(0).setTint(tint);
+  if(battle.biome==='highway'){
+   const cx=Math.floor(battle.cols/2)*32;
+   this.add.rectangle(cx,0,160,h,0x42484b).setOrigin(.5,0);
+   for(let y=16;y<h;y+=64)this.add.rectangle(cx,y,4,28,0xe4d79b);
+   this.add.rectangle(0,h-80,w,96,0x42484b).setOrigin(0,.5);
+  }else if(battle.biome==='urban'){
+   const streets=this.add.graphics().fillStyle(0x51585b);
+   for(let x=96;x<w;x+=192)streets.fillRect(x,0,48,h);
+   for(let y=96;y<h;y+=192)streets.fillRect(0,y,w,48);
+  }
+  for(const t of battle.trees||[]){const tree=this.add.image((t.col+.5)*32,(t.row+1)*32,'tree').setOrigin(.5,1);const ratio=tree.height/tree.width;tree.setDisplaySize(32,32*ratio).setDepth((t.row+1)*32);}
+
   const e=battle.exit;
   this.exitTint=this.add.image(e.x+e.width/2,e.y+e.height/2,'exit-zone').setTint(0xffd84a);
   // Phaser's built-in Glow FX (WebGL); the filled zone remains visible on Canvas.
@@ -109,7 +140,7 @@ class GameScene extends Phaser.Scene{
    while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){phase='PREPARATION';battle=null;players.forEach(p=>p.ready=false);this.refresh();return;}}
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
   const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();this.actors.delete(id);}
-  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.label.setPosition(a.sprite.x,a.sprite.y-25);}
+  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17);}
   const me=players.find(p=>p.id===selfId);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
   const all=battle.inside===players.length&&players.length>0,color=all?0x51baff:battle.inside>0?0xbaff45:0xffd84a;
   this.exitTint?.setTint(color);

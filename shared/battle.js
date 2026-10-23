@@ -1,8 +1,11 @@
+import {BIOMES,createTrees,movePlayer} from './terrain.js';
 export const TILE=32, SPEED=160, SIZES=[[30,40],[50,25],[40,30],[20,60]];
 export function createBattle(players,random=Math.random){
  const [cols,rows]=SIZES[Math.min(3,Math.floor(random()*4))];
+ const biome=BIOMES[Math.min(2,Math.floor(random()*3))],seed=Math.floor(random()*0xffffffff);
+ const trees=biome==='forest'?createTrees(cols,rows,seed):[];
  for(const [index,p] of players.entries())Object.assign(p,{x:32+(index%2)*32,y:rows*TILE-32-Math.floor(index/2)*32,stamina:1,exhausted:false,ready:false});
- return {id:crypto.randomUUID(),cols,rows,exit:{x:(cols-2)*TILE,y:0,width:2*TILE,height:3*TILE},escape:0,inside:0};
+ return {id:crypto.randomUUID(),cols,rows,biome,seed,trees,exit:{x:(cols-2)*TILE,y:0,width:2*TILE,height:3*TILE},escape:0,inside:0};
 }
 export function inExit(p,map){const e=map.exit;return p.x>=e.x&&p.x<e.x+e.width&&p.y>=e.y&&p.y<e.y+e.height;}
 export function stepBattle(map,players,inputs,seconds){
@@ -14,7 +17,7 @@ export function stepBattle(map,players,inputs,seconds){
   // Integrate the final fraction of a sprint frame without granting free speed.
   const sprintTime=sprint?Math.min(dt,p.stamina*4):0;
   const distance=SPEED*(dt+.5*sprintTime);
-  if(length){p.x=Math.max(16,Math.min(map.cols*TILE-16,p.x+x/length*distance));p.y=Math.max(16,Math.min(map.rows*TILE-16,p.y+y/length*distance));}
+  if(length)movePlayer(map,p,x/length*distance,y/length*distance);
   if(sprint){p.stamina=Math.max(0,p.stamina-dt/4);if(p.stamina<1e-8){p.stamina=0;p.exhausted=true;}}
   else{p.stamina=Math.min(1,p.stamina+dt/6);if(p.stamina>1-1e-8){p.stamina=1;p.exhausted=false;}}
  }
