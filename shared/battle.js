@@ -1,0 +1,24 @@
+export const TILE=32, SPEED=160, SIZES=[[30,40],[50,25],[40,30],[20,60]];
+export function createBattle(players,random=Math.random){
+ const [cols,rows]=SIZES[Math.min(3,Math.floor(random()*4))];
+ for(const [index,p] of players.entries())Object.assign(p,{x:32+(index%2)*32,y:rows*TILE-32-Math.floor(index/2)*32,stamina:1,exhausted:false,ready:false});
+ return {id:crypto.randomUUID(),cols,rows,exit:{x:(cols-2)*TILE,y:0,width:2*TILE,height:3*TILE},escape:0,inside:0};
+}
+export function inExit(p,map){const e=map.exit;return p.x>=e.x&&p.x<e.x+e.width&&p.y>=e.y&&p.y<e.y+e.height;}
+export function stepBattle(map,players,inputs,seconds){
+ const dt=Math.min(.1,Math.max(0,seconds));
+ for(const p of players){
+  const input=inputs.get(p.id)||{};
+  const x=Number(input.right===true)-Number(input.left===true),y=Number(input.down===true)-Number(input.up===true),length=Math.hypot(x,y);
+  const sprint=length>0&&input.sprint===true&&!p.exhausted&&p.stamina>0;
+  // Integrate the final fraction of a sprint frame without granting free speed.
+  const sprintTime=sprint?Math.min(dt,p.stamina*4):0;
+  const distance=SPEED*(dt+.5*sprintTime);
+  if(length){p.x=Math.max(16,Math.min(map.cols*TILE-16,p.x+x/length*distance));p.y=Math.max(16,Math.min(map.rows*TILE-16,p.y+y/length*distance));}
+  if(sprint){p.stamina=Math.max(0,p.stamina-dt/4);if(p.stamina<1e-8){p.stamina=0;p.exhausted=true;}}
+  else{p.stamina=Math.min(1,p.stamina+dt/6);if(p.stamina>1-1e-8){p.stamina=1;p.exhausted=false;}}
+ }
+ map.inside=players.filter(p=>inExit(p,map)).length;
+ map.escape=players.length>0&&map.inside===players.length?Math.min(3,map.escape+dt):0;
+ return map.escape>=3-1e-8;
+}

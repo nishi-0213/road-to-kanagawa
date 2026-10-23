@@ -1,0 +1,19 @@
+import assert from 'node:assert/strict';
+import WebSocket from 'ws';
+const base=process.env.TEST_URL||'http://127.0.0.1:8787';
+const {code}=await (await fetch(`${base}/api/rooms`,{method:'POST'})).json();const group=[];let timers=[];
+async function until(fn,ms=8000){const end=Date.now()+ms;while(!fn()){if(Date.now()>end)throw Error('Timed out');await new Promise(r=>setTimeout(r,25));}}
+const send=(p,m)=>p.ws.send(JSON.stringify(m));
+try{
+ for(let i=0;i<4;i++){const p={ws:new WebSocket(`${base.replace(/^http/,'ws')}/api/rooms/${code}/ws`),state:null};group.push(p);p.ws.on('message',raw=>p.state=JSON.parse(raw));await new Promise((r,j)=>{p.ws.once('open',r);p.ws.once('error',j);});await until(()=>p.state);}
+ await until(()=>group.every(p=>p.state.count===4));group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));
+ assert.ok(group.every(p=>p.state.battle.id===group[0].state.battle.id));assert.ok(group.every(p=>p.state.players[0].y>p.state.battle.rows*32-100));
+ // Coordinates submitted by a client never override authoritative movement.
+ const first=group[0],initial=first.state.players[0].x;send(first,{type:'input',x:99999,y:0});await new Promise(r=>setTimeout(r,150));assert.equal(first.state.players[0].x,initial);
+ const move=p=>setInterval(()=>{if(p.state.phase!=='BATTLE')return;const me=p.state.players.find(x=>x.id===p.state.selfId),e=p.state.battle.exit;send(p,{type:'input',right:me.x<e.x+24,left:me.x>e.x+40,up:me.y>56,down:me.y<40,sprint:true});},50);
+ timers=group.slice(0,3).map(move);
+ await until(()=>first.state.battle?.inside===3,30000);await new Promise(r=>setTimeout(r,1200));assert.equal(first.state.phase,'BATTLE');assert.equal(first.state.battle.escape,0);
+ timers.push(move(group[3]));await until(()=>first.state.battle?.inside===4,30000);await until(()=>first.state.battle?.escape>1,5000);assert.equal(first.state.phase,'BATTLE');
+ await until(()=>group.every(p=>p.state.phase==='PREPARATION'),5000);assert.ok(group.every(p=>p.state.players.every(x=>!x.ready)));assert.ok(group.every(p=>p.state.battle===null));
+ group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));assert.ok(group.every(p=>p.state.players.every(x=>x.stamina===1)));console.log('PASS: shared random map, server movement and teleport rejection, stamina, 3/4 waiting, 4/4 timed escape, preparation reset and next round');
+}finally{timers.forEach(clearInterval);group.forEach(p=>p.ws.close());}

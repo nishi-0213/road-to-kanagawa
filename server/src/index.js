@@ -1,3 +1,4 @@
+import {createBattle,stepBattle} from '../../shared/battle.js';
 export default {
   async fetch(request,env){
     const url=new URL(request.url);
@@ -18,7 +19,7 @@ export default {
 };
 export class GameRoom{
   constructor(ctx){
-    this.ctx=ctx;this.initialized=false;this.phase='PREPARATION';
+    this.ctx=ctx;this.initialized=false;this.phase='PREPARATION';this.battle=null;this.inputs=new Map();this.timer=null;
     ctx.blockConcurrencyWhile(async()=>{
       // Upgrade sockets opened by the previous room-only deployment.
       const sockets=this.sockets();
@@ -27,6 +28,7 @@ export class GameRoom{
       this.initialized=await ctx.storage.get('initialized')===true;
       this.phase=await ctx.storage.get('phase')||'PREPARATION';
       if(!this.sockets().length){this.phase='PREPARATION';await ctx.storage.put('phase',this.phase);}
+      if(this.phase==='BATTLE'){this.battle=await ctx.storage.get('battle');if(this.battle){this.battle.escape=0;this.startTimer();}else{this.phase='PREPARATION';await ctx.storage.put('phase',this.phase);}}
     });
   }
   async fetch(request){
@@ -50,20 +52,46 @@ export class GameRoom{
   broadcast(){
     const players=this.players();
     for(const ws of this.sockets()){
-      try{ws.send(JSON.stringify({type:'room',count:players.length,phase:this.phase,players,selfId:ws.deserializeAttachment().id}));}catch{}
+      try{ws.send(JSON.stringify({type:'room',count:players.length,phase:this.phase,battle:this.battle,players,selfId:ws.deserializeAttachment().id}));}catch{}
     }
   }
   async advance(){
     const players=this.players();
-    if(!players.length){this.phase='PREPARATION';await this.ctx.storage.put('phase',this.phase);}
+    if(!players.length){this.phase='PREPARATION';this.battle=null;this.stopTimer();await this.ctx.storage.put('phase',this.phase);}
     else if(this.phase==='PREPARATION' && players.every(p=>p.ready)){
-      this.phase='BATTLE';await this.ctx.storage.put('phase',this.phase);
+      this.phase='BATTLE';this.battle=createBattle(players);
+      for(const ws of this.sockets())ws.serializeAttachment(players.find(p=>p.id===ws.deserializeAttachment().id));
+      await this.ctx.storage.put({phase:this.phase,battle:this.battle});this.startTimer();
+    }
+    this.broadcast();
+  }
+  startTimer(){
+    if(this.timer)return;
+    this.lastTick=Date.now();
+    this.timer=setInterval(()=>this.tick(),50);
+  }
+  stopTimer(){clearInterval(this.timer);this.timer=null;this.inputs.clear();}
+  tick(){
+    if(this.phase!=='BATTLE'||!this.battle)return;
+    const now=Date.now(),dt=(now-this.lastTick)/1000;this.lastTick=now;
+    for(const [id,input] of this.inputs)if(now-input.at>250)this.inputs.delete(id);
+    const players=this.players();
+    if(!players.length){this.stopTimer();return;}
+    const complete=stepBattle(this.battle,players,this.inputs,dt);
+    for(const ws of this.sockets()){const p=players.find(p=>p.id===ws.deserializeAttachment().id);if(p)ws.serializeAttachment(p);}
+    if(complete){
+      this.phase='PREPARATION';this.battle=null;this.stopTimer();
+      for(const ws of this.sockets())ws.serializeAttachment({...ws.deserializeAttachment(),ready:false});
+      this.ctx.waitUntil(this.ctx.storage.put('phase',this.phase));
     }
     this.broadcast();
   }
   async webSocketMessage(ws,raw){
     if(typeof raw!=='string'||raw.length>256){ws.close(1008,'Invalid message');return;}
     let message;try{message=JSON.parse(raw);}catch{ws.close(1008,'Invalid JSON');return;}
+    if(message?.type==='input'){
+      if(this.phase==='BATTLE'){const id=ws.deserializeAttachment().id;this.inputs.set(id,{left:message.left===true,right:message.right===true,up:message.up===true,down:message.down===true,sprint:message.sprint===true,at:Date.now()});}return;
+    }
     if(message?.type!=='ready'||typeof message.ready!=='boolean'){ws.close(1008,'Invalid action');return;}
     if(this.phase!=='PREPARATION')return;
     const player=ws.deserializeAttachment();
