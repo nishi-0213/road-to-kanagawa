@@ -25,5 +25,9 @@ try{
  await until(()=>first.state.battle?.inside===3,45000);await new Promise(r=>setTimeout(r,1200));assert.equal(first.state.phase,'BATTLE');assert.equal(first.state.battle.escape,0);
  timers.push(move(group[3]));await until(()=>first.state.battle?.inside===4,45000);await until(()=>first.state.battle?.escape>1,5000);assert.equal(first.state.phase,'BATTLE');
  await until(()=>group.every(p=>p.state.phase==='PREPARATION'),5000);assert.ok(group.every(p=>p.state.players.every(x=>!x.ready)));assert.ok(group.every(p=>p.state.battle===null));
- group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));assert.ok(group.every(p=>p.state.players.every(x=>x.stamina===1)));console.log('PASS: shared random map, server movement and teleport rejection, stamina, 3/4 waiting, 4/4 timed escape, preparation reset and next round');
+ assert.equal(group[0].state.route.canAdvance,true);
+ send(group[0],{type:'ready',ready:true});await new Promise(r=>setTimeout(r,100));assert.equal(group[0].state.phase,'PREPARATION');assert.ok(group[0].state.players.every(x=>!x.ready));
+ const target=group[0].state.route.current+1;send(group[1],{type:'select_node',target});await until(()=>group.every(p=>p.state.route.current===target));assert.ok(group.every(p=>!p.state.route.canAdvance));
+ send(group[0],{type:'select_node',target:target+1});await new Promise(r=>setTimeout(r,100));assert.equal(group[0].state.route.current,target);
+ group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));assert.ok(group.every(p=>p.state.players.every(x=>x.stamina===1)));assert.ok(group.every(p=>p.state.battle.city==='新大阪'));console.log('PASS: shared random map, server movement and teleport rejection, stamina, 3/4 waiting, 4/4 timed escape, preparation reset and next round');
 }finally{timers.forEach(clearInterval);group.forEach(p=>p.ws.close());}

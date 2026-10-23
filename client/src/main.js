@@ -1,10 +1,11 @@
+import {createRoute,nextNodes,selectNode,finishBattle,nodeInfo} from '../../shared/route.js';
 import {ITEMS,nearestBox,openBox} from '../../shared/items.js';
 import Phaser from 'phaser';
 import './style.css';
 import {createBattle,stepBattle,TILE} from '../../shared/battle.js';
 import {BIOME_NAMES} from '../../shared/terrain.js';
 const form=document.querySelector('#login'),codeInput=document.querySelector('#code'),message=document.querySelector('#message');
-let socket=null,connecting=false,gameScene=null,mode=null,room='',count=0,connectionTimer,phase='PREPARATION',players=[],selfId=null,battle=null;
+let socket=null,connecting=false,gameScene=null,mode=null,room='',count=0,connectionTimer,phase='PREPARATION',players=[],selfId=null,battle=null,route=null;
 function busy(value){connecting=value;form.querySelectorAll('button,input').forEach(el=>el.disabled=value);}
 function report(text){message.textContent=text;}
 function showLogin(text=''){mode=null;form.hidden=false;busy(false);report(text);gameScene?.refresh();}
@@ -19,7 +20,7 @@ async function join(code){
  ws.onmessage=event=>{
   if(socket!==ws)return;
   try{const data=JSON.parse(event.data);if(data.type==='room'){
-   const previous=phase,oldMap=battle?.id;clearTimeout(connectionTimer);count=data.count;phase=data.phase;players=data.players;selfId=data.selfId;battle=data.battle;
+   const previous=phase,oldMap=battle?.id;clearTimeout(connectionTimer);count=data.count;phase=data.phase;players=data.players;selfId=data.selfId;battle=data.battle;route=data.route;
    if(mode!=='online'||previous!==phase||oldMap!==battle?.id)enter('online');
    else if(phase==='PREPARATION')gameScene?.refresh();
   }}catch{}
@@ -27,7 +28,7 @@ async function join(code){
  ws.onerror=()=>report('接続できません。ルームコード・満員・通信状態をご確認ください。');
  ws.onclose=()=>{if(socket!==ws)return;clearTimeout(connectionTimer);socket=null;showLogin('接続が終了しました。再度入室してください。');};
 }
-document.querySelector('#solo').onclick=()=>{if(!connecting){phase='PREPARATION';battle=null;selfId='solo';players=[{id:'solo',slot:1,ready:false}];enter('solo');}};
+document.querySelector('#solo').onclick=()=>{if(!connecting){phase='PREPARATION';battle=null;route=createRoute();selfId='solo';players=[{id:'solo',slot:1,ready:false}];enter('solo');}};
 document.querySelector('#create').onclick=async()=>{
  if(connecting)return;busy(true);report('ルーム作成中…');
  try{const response=await fetch('/api/rooms',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error();const data=await response.json();busy(false);await join(data.code);}catch{busy(false);report('ルームを作成できませんでした。');}
@@ -67,7 +68,7 @@ class GameScene extends Phaser.Scene{
    copy.on('pointerdown',async()=>{const url=new URL(location.href);url.search='';url.searchParams.set('room',room);try{await navigator.clipboard.writeText(url.href);copy.setText('コピーしました');}catch{copy.setText('ルームコード：'+room);}});this.hud.add(copy);
   }
   if(phase==='BATTLE'){
-   this.hud.add(this.text(260,25,`${BIOME_NAMES[battle.biome]||'森林地帯'}　WASD：移動 / Shift：ダッシュ`,{fontSize:'14px'}));
+   this.hud.add(this.text(260,25,`${battle.city||''}　${BIOME_NAMES[battle.biome]||'森林地帯'}　WASD：移動 / Shift：ダッシュ`,{fontSize:'14px'}));
    this.hud.add(this.text(260,54,'スタミナ',{fontSize:'14px'}));
    this.hud.add(this.add.rectangle(340,54,164,14,0x15202a).setOrigin(0).setStrokeStyle(1,0x66807b));
    this.staminaBar=this.add.rectangle(342,56,160,10,0x88ddbb).setOrigin(0);this.hud.add(this.staminaBar);
@@ -87,17 +88,55 @@ class GameScene extends Phaser.Scene{
   if(mode==='solo')openBox(battle,player,box.id);else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'open_box',id:box.id}));
  }
  preparation(){
+  this.drawRoute();
+  const startY=Math.max(145,this.scale.height/3+85),locked=route?.canAdvance||route?.finished;
   const width=Math.min(230,this.scale.width-40),x=this.scale.width-20-width/2;
-  const gap=Math.min(70,Math.max(52,(this.scale.height-145)/Math.max(1,players.length)));
+  const gap=Math.min(70,Math.max(52,(this.scale.height-startY)/Math.max(1,players.length)));
   players.forEach((player,index)=>{
-   const mine=player.id===selfId,y=145+index*gap;
+   const mine=player.id===selfId,y=startY+index*gap;
    const background=this.add.rectangle(x,y,width,50,player.ready?0x245d50:mine?0x28465c:0x1b2c39).setStrokeStyle(1,mine?0x80d5ee:0x405461);
    this.hud.add(background);this.hud.add(this.text(x,y,`プレイヤー${player.slot}${mine?'（あなた）':''}\n${player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
-   if(mine){background.setInteractive({useHandCursor:true});background.on('pointerdown',()=>{
-    if(mode==='solo'){battle=createBattle(players);phase='BATTLE';this.refresh();}
+   if(locked)background.setAlpha(.4);
+   if(mine&&!locked){background.setInteractive({useHandCursor:true});background.on('pointerdown',()=>{
+    if(mode==='solo'){battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
     else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ready',ready:!player.ready}));
    });}
   });
+  if(this.routeTooltip)this.hud.bringToTop(this.routeTooltip);
+ }
+ drawRoute(){
+  if(!route)return;
+  const height=this.scale.height/3,top=Math.min(112,height*.45),width=this.scale.width;
+  this.hud.add(this.add.rectangle(0,105,width,Math.max(0,height-105),0x182732,.85).setOrigin(0));
+  const yCenter=(top+height-36)/2,amplitude=Math.max(12,(height-top-62)/2);
+  const positions=route.nodes.map(n=>({x:32+n.id*(width-64)/(route.nodes.length-1),y:yCenter+n.lane*amplitude}));
+  const allowed=nextNodes(route),lines=this.add.graphics();this.hud.add(lines);
+  for(const edge of route.edges){const a=positions[edge.from],b=positions[edge.to],active=edge.from===route.current&&allowed.includes(edge.to);lines.lineStyle(active?2:1,active?0xdde990:0x65737d,active?1:.65);lines.lineBetween(a.x,a.y,b.x,b.y);}
+  this.routeCircles=new Map();
+  const tooltip=this.add.container(0,0).setDepth(1).setVisible(false);this.routeTooltip=tooltip;
+  tooltip.add(this.add.rectangle(0,0,236,110,0x101b25,.98).setOrigin(0).setStrokeStyle(1,0xb7a760));
+  const tooltipText=this.text(12,10,'',{fontSize:'14px',lineSpacing:6,color:'#f2e9c5'});tooltip.add(tooltipText);
+  for(const node of route.nodes){
+   const p=positions[node.id],visited=route.visited.includes(node.id),base=visited?0xb9e56c:0xffe5a0;
+   const circle=this.add.circle(p.x,p.y,10,base).setStrokeStyle(node.id===route.current?3:1,node.id===route.current?0xeafbc8:0x8e845f).setInteractive({useHandCursor:allowed.includes(node.id)});
+   this.hud.add(circle);this.routeCircles.set(node.id,circle);
+   circle.on('pointerover',()=>{
+    if(!visited)circle.setFillStyle(0xd7a923);const info=nodeInfo(node,players.length);
+    tooltipText.setText(`${info.name}\n特性：${info.trait}\n消費燃料：${info.fuel}　食料：${info.food}\n食料は1人あたり1つ`);
+    tooltip.setPosition(Math.max(8,Math.min(width-244,p.x-118)),p.y+38).setVisible(true);
+   });circle.on('pointerout',()=>{circle.setFillStyle(base);tooltip.setVisible(false);});
+   circle.on('pointerdown',()=>{
+    if(!allowed.includes(node.id))return;
+    if(mode==='solo'){if(selectNode(route,node.id)){players.forEach(p=>p.ready=false);this.refresh();}}
+    else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'select_node',target:node.id}));
+   });
+   const name=node.name==='神奈川ゴール'?'神奈川\nゴール':node.name;
+   this.hud.add(this.text(p.x,p.y+17,name,{fontSize:`${Math.min(13,Math.max(10,(width-64)/route.nodes.length/4))}px`,align:'center',color:visited?'#c9ee95':'#d9e0d8'}).setOrigin(.5,0));
+  }
+  this.hud.add(tooltip);
+  const status=route.finished?'神奈川ゴールに到達しました！':route.canAdvance?'接続された右側のノードをクリックして進んでください。':'準備ができたら準備完了を押してください。脱出後に次のノードへ進めます。';
+  this.hud.add(this.text(20,height+20,`現在地：${route.nodes[route.current].name}`,{fontSize:'20px',color:'#d6ec9f'}));
+  this.hud.add(this.text(20,height+52,status,{fontSize:'14px'}));this.hud.bringToTop(tooltip);
  }
  drawMapFade(w,h,tint){
   const name='map-fade';if(this.textures.exists(name))this.textures.remove(name);
@@ -152,7 +191,7 @@ class GameScene extends Phaser.Scene{
   const meBefore=players.find(p=>p.id===selfId),nearby=meBefore?nearestBox(battle,meBefore):null;
   if(mode==='solo'){
    const now=performance.now();let remaining=Math.min(1,(now-(this.lastSimulation??now))/1000);this.lastSimulation=now;
-   while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){phase='PREPARATION';battle=null;players.forEach(p=>p.ready=false);this.refresh();return;}}
+   while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){phase='PREPARATION';battle=null;finishBattle(route);players.forEach(p=>p.ready=false);this.refresh();return;}}
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
   const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();this.actors.delete(id);}
   for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17);}

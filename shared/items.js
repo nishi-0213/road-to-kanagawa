@@ -11,7 +11,7 @@ export function createBoxes(map,random=Math.random){
   if(!(col<3&&row>=rows-3)&&!(col>=cols-3&&row<4))candidates.push({col,row});
   queue.push([col-1,row],[col+1,row],[col,row-1],[col,row+1]);
  }
- const boxes=[],count=Math.max(8,Math.min(16,Math.round(cols*rows/100)));
+ const boxes=[],count=3+Math.min(2,Math.floor(random()*3));
  while(candidates.length&&boxes.length<count){
   const index=Math.min(candidates.length-1,Math.floor(random()*candidates.length)),cell=candidates[index];
   candidates[index]=candidates[candidates.length-1];candidates.pop();

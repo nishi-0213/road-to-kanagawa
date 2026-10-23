@@ -7,7 +7,7 @@ const make=()=>({id:'a',slot:1,inventory:createInventory()});
 test('boxes are distinct, spaced, on reachable tiles and away from spawn and exit in all biome sizes',()=>{
  for(let size=0;size<4;size++)for(let biome=0;biome<3;biome++){
   let count=0;const random=()=>count++===0?(size+.1)/4:count===2?(biome+.1)/3:.41;
-  const players=[make()],map=createBattle(players,random);assert.deepEqual([map.cols,map.rows],SIZES[size]);assert.ok(map.boxes.length>=8);
+  const players=[make()],map=createBattle(players,random);assert.deepEqual([map.cols,map.rows],SIZES[size]);assert.ok(map.boxes.length>=3&&map.boxes.length<=5);
   const seen=new Set(),queue=[[1,map.rows-2]];
   for(let i=0;i<queue.length;i++){const [x,y]=queue[i],key=y*map.cols+x;if(x<0||y<0||x>=map.cols||y>=map.rows||seen.has(key))continue;seen.add(key);if(!canStand(map,x*32+16,y*32+16)){seen.delete(key);continue;}for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(nx>=0&&ny>=0&&nx<map.cols&&ny<map.rows&&!seen.has(ny*map.cols+nx)&&canStand(map,nx*32+16,ny*32+16))queue.push([nx,ny]);}}
   for(const box of map.boxes){assert.ok(canStand(map,box.x,box.y));assert.ok(seen.has(Math.floor(box.y/32)*map.cols+Math.floor(box.x/32)));assert.equal(box.loot,undefined);assert.equal(box.opened,false);}
@@ -27,4 +27,8 @@ test('distance and obstruction validation, concurrent claim has a single owner, 
  a.x=100;a.y=144;map.rocks=[{col:3,row:4}];assert.equal(openBox(map,a,'box'),null);
  map.rocks=[];a.x=144;assert.ok(openBox(map,a,'box',()=>.8));assert.equal(openBox(map,b,'box'),null);assert.equal(a.inventory.rifle,1);assert.equal(b.inventory.rifle,0);
  createBattle([a],()=>.4);assert.equal(a.inventory.rifle,1);
+});
+
+test('each battle creates exactly 3, 4 or 5 boxes according to the count draw',()=>{
+ for(let desired=3;desired<=5;desired++){let call=0;const random=()=>{call++;return call===4?(desired-3+.1)/3:.4;};const map=createBattle([make()],random);assert.equal(map.boxes.length,desired);}
 });

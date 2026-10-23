@@ -8,7 +8,7 @@ const total=inventory=>Object.values(inventory||{}).reduce((a,b)=>a+b,0);
 try{
  for(let i=0;i<2;i++){const p={ws:new WebSocket(`${base.replace(/^http/,'ws')}/api/rooms/${code}/ws`),state:null};group.push(p);p.ws.on('message',raw=>p.state=JSON.parse(raw));await new Promise((r,j)=>{p.ws.once('open',r);p.ws.once('error',j);});await until(()=>p.state);}
  await until(()=>group.every(p=>p.state.count===2));group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));
- const first=group[0],map=first.state.battle;assert.ok(map.rocks.length>0);assert.ok(map.boxes.length>=8);assert.ok(map.boxes.every(b=>!b.loot));assert.deepEqual(map,group[1].state.battle);
+ const first=group[0],map=first.state.battle;assert.ok(map.rocks.length>0);assert.ok(map.boxes.length>=3&&map.boxes.length<=5);assert.ok(map.boxes.every(b=>!b.loot));assert.deepEqual(map,group[1].state.battle);
  const start=first.state.players[0],target=[...map.boxes].sort((a,b)=>Math.hypot(a.x-start.x,a.y-start.y)-Math.hypot(b.x-start.x,b.y-start.y))[0];
  send(first,{type:'open_box',id:target.id,item:'rifle',quantity:999});await new Promise(r=>setTimeout(r,120));assert.ok(!first.state.battle.boxes.find(b=>b.id===target.id).opened);assert.ok(first.state.players.every(p=>total(p.inventory)===0));
  for(const p of group){
