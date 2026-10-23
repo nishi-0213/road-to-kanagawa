@@ -33,4 +33,4 @@ npm run deploy
 
 WebSocket専用トークンは不要。APIトークンはデプロイ環境のみに設定し、GitHubやブラウザには含めないでください。1人プレイは通信しません。協力プレイは休止対応のDurable Objects WebSocket APIを使用し、ルーム存在フラグのみ永続保存します。ルームコードは招待用で、個別ユーザー認証や進行保存はありません。
 
-プレイヤーPNGは `client/assets/player.png` に配置すると自動使用します。元ファイル未提供の間は白い人物の仮表示です。
+プレイヤーはユーザー提供の透過32×32 PNG（`client/assets/player.png`）を使用します。
