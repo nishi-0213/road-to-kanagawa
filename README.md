@@ -1,5 +1,9 @@
 # Multiplayer Game
 
+公開URL：https://road-to-kanagawa.fow-shogi.workers.dev
+
+GitHub：https://github.com/nishi-0213/road-to-kanagawa
+
 Cloudflare Workers + Durable Objects + WebSocket + Phaser の最小構成です。
 
 ブラウザいっぱいの空のPhaserウィンドウに、HTMLの「1人で遊ぶ」「ルーム作成」「ルームコードを入力して入室」を重ねます。入室後はHTMLを隠します。ゲーム内容はありません。ルームは最大4人で、ゲーム画面内にコードと人数、招待URLコピー、退出を表示します。アカウント認証ではなく入室操作のみです。
