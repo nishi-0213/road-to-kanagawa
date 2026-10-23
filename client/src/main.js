@@ -63,7 +63,7 @@ class GameScene extends Phaser.Scene{
    copy.on('pointerdown',async()=>{const url=new URL(location.href);url.search='';url.searchParams.set('room',room);try{await navigator.clipboard.writeText(url.href);copy.setText('コピーしました');}catch{copy.setText('ルームコード：'+room);}});this.hud.add(copy);
   }
   if(phase==='BATTLE'){
-   this.hud.add(this.text(260,25,`${battle.cols} × ${battle.rows} マス　WASD：移動 / Shift：ダッシュ`,{fontSize:'14px'}));
+   this.hud.add(this.text(260,25,'WASD：移動 / Shift：ダッシュ',{fontSize:'14px'}));
    this.hud.add(this.text(260,54,'スタミナ',{fontSize:'14px'}));
    this.hud.add(this.add.rectangle(340,54,164,14,0x15202a).setOrigin(0).setStrokeStyle(1,0x66807b));
    this.staminaBar=this.add.rectangle(342,56,160,10,0x88ddbb).setOrigin(0);this.hud.add(this.staminaBar);
@@ -99,7 +99,7 @@ class GameScene extends Phaser.Scene{
    this.actors.set(p.id,{sprite,label});
   }
   const me=this.actors.get(selfId)?.sprite;
-  if(me){this.cameras.main.setBounds(0,-160,w,h+160);this.cameras.main.centerOn(me.x,me.y);this.cameras.main.startFollow(me,true,.18,.18,0,-55);}
+  if(me){this.cameras.main.removeBounds();this.cameras.main.centerOn(me.x,me.y);this.cameras.main.startFollow(me,false,1,1,0,0);}
  }
  update(time,delta){
   if(!mode||phase!=='BATTLE'||!battle)return;
