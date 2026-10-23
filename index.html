@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Multiplayer Game</title></head>
+<body>
+  <div id="app"></div>
+  <form id="login" aria-label="プレイ方法">
+    <button type="button" id="solo">1人で遊ぶ</button>
+    <button type="button" id="create">ルーム作成</button>
+    <label><input id="code" aria-label="ルームコード" placeholder="ルームコード" maxlength="12" autocomplete="off" spellcheck="false"></label>
+    <button type="submit">ルームコードを入力して入室</button>
+    <output id="message" role="status" aria-live="polite"></output>
+  </form>
+  <script type="module" src="/client/src/main.js"></script>
+</body>
+</html>

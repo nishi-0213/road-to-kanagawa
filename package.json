@@ -1,0 +1,21 @@
+{
+  "name": "multiplayer-game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "server": "XDG_CONFIG_HOME=./work/config WRANGLER_LOG_PATH=./work/wrangler.log wrangler dev --ip 0.0.0.0",
+    "build": "vite build",
+    "test:ws": "node tests/websocket-smoke.js",
+    "deploy:check": "XDG_CONFIG_HOME=./work/config WRANGLER_LOG_PATH=./work/wrangler.log wrangler deploy --dry-run",
+    "deploy": "XDG_CONFIG_HOME=./work/config WRANGLER_LOG_PATH=./work/wrangler.log wrangler deploy"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.1",
+    "wrangler": "^4.0.0",
+    "ws": "^8.18.0"
+  }
+}
