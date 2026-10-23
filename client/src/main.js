@@ -42,7 +42,7 @@ const STYLE={fontFamily:'sans-serif',fontSize:'16px',color:'#b8cbd7'};
 class GameScene extends Phaser.Scene{
  preload(){const url=Object.values(playerImages)[0];if(url)this.load.image('player',url);if(treeImage)this.load.image('tree',treeImage);for(const key of ['box','stone',...ITEMS.map(i=>i.id)]){const file=Object.entries(treeImages).find(([name])=>name.split('/').pop().toLowerCase()===key+'.png')?.[1];if(file)this.load.image(key,file);}}
  create(){
-  gameScene=this;this.actors=new Map();this.lastSend=0;
+  gameScene=this;this.actors=new Map();this.lastSend=0;this.lootMapId=null;this.shownLoot=new Set();
   this.keys=this.input.keyboard.addKeys('W,A,S,D,SHIFT,E');
   this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
   // A neutral temporary 32px figure is used only until the original PNG is available.
@@ -54,6 +54,7 @@ class GameScene extends Phaser.Scene{
  }
  text(x,y,text,style={}){return this.add.text(x,y,text,{...STYLE,...style});}
  refresh(){
+  for(const object of this.children.list)if(object.name==='loot-popup')this.tweens.killTweensOf(object);
   this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.boxProgress=new Map();this.inventoryCounts=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
   const camera=this.cameras.main;camera.stopFollow();camera.setScroll(0,0);camera.removeBounds();camera.setZoom(1);
   if(!mode)return;
@@ -139,6 +140,12 @@ class GameScene extends Phaser.Scene{
   this.hud.add(this.text(20,height+20,`現在地：${route.nodes[route.current].name}`,{fontSize:'20px',color:'#d6ec9f'}));
   this.hud.add(this.text(20,height+52,status,{fontSize:'14px'}));this.hud.bringToTop(tooltip);
  }
+ showPickup(box){
+  const player=players.find(p=>p.id===box.openedBy),actor=this.actors.get(box.openedBy)?.sprite,item=ITEMS.find(item=>item.id===box.loot?.item);
+  if(!player||!item||!box.loot.quantity)return;
+  const popup=this.text(actor?.x??player.x,(actor?.y??player.y)-26,`${item.name} +${box.loot.quantity}`,{fontSize:'12px',color:'#fff2b3',stroke:'#101820',strokeThickness:3}).setOrigin(.5,1).setDepth(20000).setName('loot-popup');
+  this.tweens.add({targets:popup,y:popup.y-36,alpha:0,duration:1800,ease:'Sine.Out',onComplete:()=>popup.destroy()});
+ }
  drawMapFade(w,h,tint){
   const name='map-fade';if(this.textures.exists(name))this.textures.remove(name);
   const extent=128,texture=this.textures.createCanvas(name,w+extent*2,h+extent*2),ctx=texture.context;
@@ -153,6 +160,7 @@ class GameScene extends Phaser.Scene{
   ctx.putImageData(image,0,0);texture.refresh();this.add.image(-extent,-extent,name).setOrigin(0).setDepth(-1);
  }
  buildBattle(){
+  if(this.lootMapId!==battle.id){this.lootMapId=battle.id;this.shownLoot=new Set((battle.boxes||[]).filter(box=>box.opened).map(box=>box.id));}
   const w=battle.cols*TILE,h=battle.rows*TILE;
   const tint=battle.biome==='urban'?0xa2a7a8:battle.biome==='highway'?0xb9bd97:0xffffff;
   this.drawMapFade(w,h,tint);
@@ -198,6 +206,7 @@ class GameScene extends Phaser.Scene{
   for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId);}
   const me=players.find(p=>p.id===selfId);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
   for(const box of battle.boxes||[]){
+   if(box.opened&&!this.shownLoot.has(box.id)){this.shownLoot.add(box.id);this.showPickup(box);}
    const image=this.boxSprites.get(box.id);if(image)image.setAlpha(box.opened?.28:1).setTint(box.opened?0x7f8b8e:0xffffff);
    const progress=box.opened?0:Math.max(0,...players.filter(p=>p.lootBoxId===box.id).map(p=>p.lootProgress||0)),bar=this.boxProgress.get(box.id);
    if(bar){bar.back.setVisible(progress>0);bar.fill.setVisible(progress>0).setScale(progress,1);}
