@@ -1,3 +1,4 @@
+import {openBox} from '../../shared/items.js';
 import {createBattle,stepBattle} from '../../shared/battle.js';
 export default {
   async fetch(request,env){
@@ -89,6 +90,12 @@ export class GameRoom{
   async webSocketMessage(ws,raw){
     if(typeof raw!=='string'||raw.length>256){ws.close(1008,'Invalid message');return;}
     let message;try{message=JSON.parse(raw);}catch{ws.close(1008,'Invalid JSON');return;}
+    if(message?.type==='open_box'){
+      if(this.phase==='BATTLE'&&typeof message.id==='string'){
+        const player=ws.deserializeAttachment();
+        if(openBox(this.battle,player,message.id)){ws.serializeAttachment(player);await this.ctx.storage.put('battle',this.battle);this.broadcast();}
+      }return;
+    }
     if(message?.type==='input'){
       if(this.phase==='BATTLE'){const id=ws.deserializeAttachment().id;this.inputs.set(id,{left:message.left===true,right:message.right===true,up:message.up===true,down:message.down===true,sprint:message.sprint===true,at:Date.now()});}return;
     }

@@ -11,7 +11,7 @@ try{
  // Coordinates submitted by a client never override authoritative movement.
  const first=group[0],initial=first.state.players[0].x;send(first,{type:'input',x:99999,y:0});await new Promise(r=>setTimeout(r,150));assert.equal(first.state.players[0].x,initial);
  const move=p=>{
-  const map=p.state.battle,me=p.state.players.find(x=>x.id===p.state.selfId),blocked=new Set(map.trees.map(t=>t.row*map.cols+t.col));
+  const map=p.state.battle,me=p.state.players.find(x=>x.id===p.state.selfId),blocked=new Set([...map.trees,...(map.rocks||[])].map(t=>t.row*map.cols+t.col));
   const start=Math.floor(me.y/32)*map.cols+Math.floor(me.x/32),goal=map.cols+(map.cols-2),parents=new Map([[start,null]]),queue=[start];
   for(let i=0;i<queue.length&&!parents.has(goal);i++){
    const cell=queue[i],x=cell%map.cols,y=Math.floor(cell/map.cols);

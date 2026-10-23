@@ -1,0 +1,37 @@
+import {canStand} from './terrain.js';
+export const ITEMS=[{id:'food',name:'食料'},{id:'fuel',name:'燃料'},{id:'knife',name:'ナイフ'},{id:'rifle',name:'ライフル'}];
+export const OPEN_DISTANCE=48;
+export function createInventory(){return Object.fromEntries(ITEMS.map(i=>[i.id,0]));}
+export function createBoxes(map,random=Math.random){
+ const {cols,rows}=map,seen=new Set(),queue=[[1,rows-2]],candidates=[];
+ for(let index=0;index<queue.length;index++){
+  const [col,row]=queue[index],key=row*cols+col;
+  if(col<0||row<0||col>=cols||row>=rows||seen.has(key))continue;
+  seen.add(key);if(!canStand(map,col*32+16,row*32+16))continue;
+  if(!(col<3&&row>=rows-3)&&!(col>=cols-3&&row<4))candidates.push({col,row});
+  queue.push([col-1,row],[col+1,row],[col,row-1],[col,row+1]);
+ }
+ const boxes=[],count=Math.max(8,Math.min(16,Math.round(cols*rows/100)));
+ while(candidates.length&&boxes.length<count){
+  const index=Math.min(candidates.length-1,Math.floor(random()*candidates.length)),cell=candidates[index];
+  candidates[index]=candidates[candidates.length-1];candidates.pop();
+  if(boxes.some(b=>Math.hypot(b.x-(cell.col*32+16),b.y-(cell.row*32+16))<96))continue;
+  boxes.push({id:`box-${boxes.length+1}`,x:cell.col*32+16,y:cell.row*32+16,opened:false});
+ }
+ return boxes;
+}
+export function nearestBox(map,p){return (map.boxes||[]).filter(b=>!b.opened&&Math.hypot(b.x-p.x,b.y-p.y)<=OPEN_DISTANCE&&canReachBox(map,p,b)).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];}
+function canReachBox(map,p,box){
+ // Do not allow opening through a tree or rock between player and box.
+ const steps=Math.max(1,Math.ceil(Math.hypot(p.x-box.x,p.y-box.y)/6));
+ for(let i=0;i<=steps;i++){const t=i/steps;if(!canStand(map,p.x+(box.x-p.x)*t,p.y+(box.y-p.y)*t))return false;}
+ return true;
+}
+export function openBox(map,p,id,random=Math.random){
+ const box=(map.boxes||[]).find(b=>b.id===id);
+ if(!box||box.opened||Math.hypot(box.x-p.x,box.y-p.y)>OPEN_DISTANCE||!canReachBox(map,p,box))return null;
+ const item=ITEMS[Math.min(3,Math.floor(random()*4))].id;
+ const quantity=item==='food'||item==='fuel'?1+Math.min(3,Math.floor(random()*4)):1;
+ p.inventory??=createInventory();p.inventory[item]+=quantity;
+ box.opened=true;box.openedBy=p.id;box.loot={item,quantity};return box.loot;
+}

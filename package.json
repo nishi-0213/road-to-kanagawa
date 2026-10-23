@@ -9,8 +9,9 @@
     "test:ws": "node tests/websocket-smoke.js",
     "deploy:check": "XDG_CONFIG_HOME=./work/config WRANGLER_LOG_PATH=./work/wrangler.log wrangler deploy --dry-run",
     "deploy": "XDG_CONFIG_HOME=./work/config WRANGLER_LOG_PATH=./work/wrangler.log wrangler deploy",
-    "test": "node --test tests/battle.test.js",
-    "test:battle:ws": "node tests/battle-websocket-smoke.js"
+    "test": "node --test tests/*.test.js",
+    "test:battle:ws": "node tests/battle-websocket-smoke.js",
+    "test:items:ws": "node tests/items-websocket-smoke.js"
   },
   "dependencies": {
     "phaser": "^3.90.0"

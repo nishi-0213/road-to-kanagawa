@@ -1,3 +1,4 @@
+import {ITEMS,nearestBox,openBox} from '../../shared/items.js';
 import Phaser from 'phaser';
 import './style.css';
 import {createBattle,stepBattle,TILE} from '../../shared/battle.js';
@@ -8,7 +9,6 @@ function busy(value){connecting=value;form.querySelectorAll('button,input').forE
 function report(text){message.textContent=text;}
 function showLogin(text=''){mode=null;form.hidden=false;busy(false);report(text);gameScene?.refresh();}
 function enter(nextMode){mode=nextMode;form.hidden=true;busy(false);report('');gameScene?.refresh();}
-function leave(){clearTimeout(connectionTimer);const ws=socket;socket=null;ws?.close();showLogin();}
 async function join(code){
  if(connecting)return;code=code.trim().toUpperCase();
  if(!/^[A-F0-9]{12}$/.test(code)){report('12文字のルームコードを入力してください。');return;}
@@ -39,10 +39,11 @@ const treeImage=Object.entries(treeImages).find(([name])=>/\/tree\.png$/i.test(n
 const playerImages=import.meta.glob('../assets/player.png',{eager:true,query:'?url',import:'default'});
 const STYLE={fontFamily:'sans-serif',fontSize:'16px',color:'#b8cbd7'};
 class GameScene extends Phaser.Scene{
- preload(){const url=Object.values(playerImages)[0];if(url)this.load.image('player',url);if(treeImage)this.load.image('tree',treeImage);}
+ preload(){const url=Object.values(playerImages)[0];if(url)this.load.image('player',url);if(treeImage)this.load.image('tree',treeImage);for(const key of ['box','stone',...ITEMS.map(i=>i.id)]){const file=Object.entries(treeImages).find(([name])=>name.split('/').pop().toLowerCase()===key+'.png')?.[1];if(file)this.load.image(key,file);}}
  create(){
   gameScene=this;this.actors=new Map();this.lastSend=0;
-  this.keys=this.input.keyboard.addKeys('W,A,S,D,SHIFT');
+  this.keys=this.input.keyboard.addKeys('W,A,S,D,SHIFT,E');
+  this.input.keyboard.on('keydown-E',event=>{if(!event.repeat)this.tryOpenBox();});
   this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
   // A neutral temporary 32px figure is used only until the original PNG is available.
   if(!this.textures.exists('player')){const g=this.make.graphics({x:0,y:0,add:false});g.fillStyle(0xeef5f7);g.fillCircle(16,9,6);g.fillRoundedRect(10,16,12,11,2);g.fillRect(9,26,5,5);g.fillRect(18,26,5,5);g.generateTexture('player',32,32);g.destroy();}
@@ -53,7 +54,7 @@ class GameScene extends Phaser.Scene{
  }
  text(x,y,text,style={}){return this.add.text(x,y,text,{...STYLE,...style});}
  refresh(){
-  this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
+  this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.inventoryCounts=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
   const camera=this.cameras.main;camera.stopFollow();camera.setScroll(0,0);camera.removeBounds();camera.setZoom(1);
   if(!mode)return;
   if(phase==='BATTLE'&&battle)this.buildBattle();
@@ -61,7 +62,6 @@ class GameScene extends Phaser.Scene{
   this.hud.add(this.add.rectangle(0,0,this.scale.width,118,0x101820,.88).setOrigin(0));
   this.hud.add(this.text(20,16,phase==='BATTLE'?'戦闘フェーズ':'準備フェーズ',{fontSize:'26px',color:'#eff7fa'}));
   this.hud.add(this.text(20,54,mode==='solo'?'1人プレイ':`ルームコード：${room}　${count}/4人`));
-  const exit=this.text(this.scale.width-20,20,'退出').setOrigin(1,0).setInteractive({useHandCursor:true});exit.on('pointerdown',leave);this.hud.add(exit);
   if(mode==='online'){
    const copy=this.text(20,82,'招待URLをコピー',{fontSize:'14px'}).setInteractive({useHandCursor:true});
    copy.on('pointerdown',async()=>{const url=new URL(location.href);url.search='';url.searchParams.set('room',room);try{await navigator.clipboard.writeText(url.href);copy.setText('コピーしました');}catch{copy.setText('ルームコード：'+room);}});this.hud.add(copy);
@@ -72,7 +72,19 @@ class GameScene extends Phaser.Scene{
    this.hud.add(this.add.rectangle(340,54,164,14,0x15202a).setOrigin(0).setStrokeStyle(1,0x66807b));
    this.staminaBar=this.add.rectangle(342,56,160,10,0x88ddbb).setOrigin(0);this.hud.add(this.staminaBar);
    this.hud.add(this.text(260,84,'右上の脱出ゾーンへ',{fontSize:'14px'}));
+   this.buildInventory();
+   this.boxHint=this.text(this.scale.width/2,this.scale.height-32,'',{fontSize:'16px',color:'#ffdf8b',backgroundColor:'#101820'}).setOrigin(.5);this.hud.add(this.boxHint);
   }else this.preparation();
+ }
+ buildInventory(){
+  this.hud.add(this.add.rectangle(12,126,218,180,0x101820,.85).setOrigin(0));
+  this.hud.add(this.text(24,134,'所持アイテム',{fontSize:'16px',color:'#eff7fa'}));
+  ITEMS.forEach((item,index)=>{const y=174+index*34;this.hud.add(this.add.image(36,y,item.id).setDisplaySize(24,24));this.hud.add(this.text(58,y,item.name).setOrigin(0,.5));const count=this.text(206,y,'0',{color:'#eff7fa'}).setOrigin(1,.5);this.hud.add(count);this.inventoryCounts.set(item.id,count);});
+ }
+ tryOpenBox(){
+  if(!mode||phase!=='BATTLE'||!battle)return;
+  const player=players.find(p=>p.id===selfId),box=player?nearestBox(battle,player):null;if(!box)return;
+  if(mode==='solo')openBox(battle,player,box.id);else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'open_box',id:box.id}));
  }
  preparation(){
   const width=Math.min(230,this.scale.width-40),x=this.scale.width-20-width/2;
@@ -117,6 +129,8 @@ class GameScene extends Phaser.Scene{
   }
   for(const t of battle.trees||[]){const tree=this.add.image((t.col+.5)*32,(t.row+1)*32,'tree').setOrigin(.5,1);const ratio=tree.height/tree.width;tree.setDisplaySize(32,32*ratio).setDepth((t.row+1)*32);}
 
+  for(const r of battle.rocks||[])this.add.image((r.col+.5)*32,(r.row+.5)*32,'stone').setDisplaySize(32,32).setDepth((r.row+1)*32);
+  for(const box of battle.boxes||[]){const image=this.add.image(box.x,box.y,'box').setDisplaySize(32,32).setDepth(box.y+16);this.boxSprites.set(box.id,image);}
   const e=battle.exit;
   this.exitTint=this.add.image(e.x+e.width/2,e.y+e.height/2,'exit-zone').setTint(0xffd84a);
   // Phaser's built-in Glow FX (WebGL); the filled zone remains visible on Canvas.
@@ -135,6 +149,7 @@ class GameScene extends Phaser.Scene{
  update(time,delta){
   if(!mode||phase!=='BATTLE'||!battle)return;
   const k=this.keys,input={left:k.A.isDown,right:k.D.isDown,up:k.W.isDown,down:k.S.isDown,sprint:k.SHIFT.isDown};
+  const meBefore=players.find(p=>p.id===selfId),nearby=meBefore?nearestBox(battle,meBefore):null;
   if(mode==='solo'){
    const now=performance.now();let remaining=Math.min(1,(now-(this.lastSimulation??now))/1000);this.lastSimulation=now;
    while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){phase='PREPARATION';battle=null;players.forEach(p=>p.ready=false);this.refresh();return;}}
@@ -142,6 +157,9 @@ class GameScene extends Phaser.Scene{
   const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();this.actors.delete(id);}
   for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17);}
   const me=players.find(p=>p.id===selfId);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
+  for(const box of battle.boxes||[]){const image=this.boxSprites.get(box.id);if(image)image.setAlpha(box.opened?.28:1).setTint(box.opened?0x7f8b8e:0xffffff);}
+  for(const item of ITEMS)this.inventoryCounts.get(item.id)?.setText(String(me?.inventory?.[item.id]||0));
+  this.boxHint?.setText(nearby?'E：アイテムボックスを開ける':'');
   const all=battle.inside===players.length&&players.length>0,color=all?0x51baff:battle.inside>0?0xbaff45:0xffd84a;
   this.exitTint?.setTint(color);
   if(this.exitGlow){this.exitGlow.color=color;this.exitGlow.outerStrength=4+Math.sin(time/240)*.7;}
