@@ -118,7 +118,7 @@ export class GameRoom{
     }
     if(message?.type==='open_box')return; // Older clients cannot bypass the timed interaction.
     if(message?.type==='input'){
-      if(this.phase==='BATTLE'){const id=ws.deserializeAttachment().id;this.inputs.set(id,{left:message.left===true,right:message.right===true,up:message.up===true,down:message.down===true,sprint:message.sprint===true,interact:message.interact===true,use:message.use===true,selected:['rifle','knife','medicine'].includes(message.selected)?message.selected:null,aimX:Number.isFinite(message.aimX)?Math.max(-10000,Math.min(10000,message.aimX)):null,aimY:Number.isFinite(message.aimY)?Math.max(-10000,Math.min(10000,message.aimY)):null,at:Date.now()});}return;
+      if(this.phase==='BATTLE'){const id=ws.deserializeAttachment().id;this.inputs.set(id,{left:message.left===true,right:message.right===true,up:message.up===true,down:message.down===true,sprint:message.sprint===true,interact:message.interact===true,use:message.use===true,secondary:message.secondary===true,selected:['rifle','knife','medicine'].includes(message.selected)?message.selected:null,aimX:Number.isFinite(message.aimX)?Math.max(-10000,Math.min(10000,message.aimX)):null,aimY:Number.isFinite(message.aimY)?Math.max(-10000,Math.min(10000,message.aimY)):null,at:Date.now()});}return;
     }
     if(message?.type!=='ready'||typeof message.ready!=='boolean'){ws.close(1008,'Invalid action');return;}
     if(this.phase!=='PREPARATION'||!canStartBattle(this.route))return;

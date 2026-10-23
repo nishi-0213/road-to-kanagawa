@@ -39,15 +39,15 @@ export function drawPreparationInventory(scene,players,selfId,state){
 }
 
 export function installPreparationDrag(scene,{isPreparation,onMove,onRefresh}){
- scene.input.on('dragstart',(_,object)=>{scene.dragging=true;scene.pendingDrop=null;object.setAlpha(.8);scene.hud.bringToTop(object);});
- scene.input.on('drag',(_,object,x,y)=>object.setPosition(x,y));
- scene.input.on('dragenter',(_,object,zone)=>zone.setStrokeStyle(2,0xf7df8b));
+ scene.input.on('dragstart',(pointer,object)=>{object.setData('leftDrag',pointer.leftButtonDown());if(!object.getData('leftDrag')||!isPreparation())return;scene.dragging=true;scene.pendingDrop=null;object.setAlpha(.8);scene.hud.bringToTop(object);});
+ scene.input.on('drag',(_,object,x,y)=>{if(object.getData('leftDrag')&&isPreparation())object.setPosition(x,y);});
+ scene.input.on('dragenter',(_,object,zone)=>{if(object.getData('leftDrag'))zone.setStrokeStyle(2,0xf7df8b);});
  scene.input.on('dragleave',(_,object,zone)=>zone.setStrokeStyle(1,zone.getData('stroke')));
  scene.input.on('drop',(_,object,zone)=>{
-  if(!isPreparation())return;const target=zone.getData('drop');if(!target)return;
+  if(!isPreparation()||!object.getData('leftDrag'))return;const target=zone.getData('drop');if(!target)return;
   scene.pendingDrop={type:'move_item',from:object.getData('source'),to:{area:target.area,index:target.index},itemId:object.getData('itemId'),targetItemId:target.targetItemId??null};
  });
- scene.input.on('dragend',(_,object)=>{
+ scene.input.on('dragend',(_,object)=>{if(!object.getData('leftDrag'))return;object.setData('leftDrag',false);
   const action=scene.pendingDrop;scene.pendingDrop=null;scene.dragging=false;
   for(const slot of scene.prepFrames||[])if(slot.editable)slot.frame.setStrokeStyle(1,0x8da99b);scene.trashFrame?.setStrokeStyle(1,0xbe8b82);
   if(object.active){const home=object.getData('home');if(home)object.setPosition(home.x,home.y).setAlpha(1);}

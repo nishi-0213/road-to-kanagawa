@@ -1,4 +1,4 @@
-import {cycleItem,renderCombatEffects,updateCombatHud} from './combat-ui.js';
+import {cycleItem,renderCombatEffects,updateCombatHud,updateCombatAim} from './combat-ui.js';
 import {availableItems} from '../../shared/combat.js';
 import {drawPreparationInventory,installPreparationDrag} from './preparation-ui.js';
 import {ensureInventory,createPreparation,finishBattleInventory,discardUnclaimed,movePreparationItem} from '../../shared/preparation.js';
@@ -52,6 +52,7 @@ class GameScene extends Phaser.Scene{
   this.input.on('wheel',(_pointer,_objects,_dx,dy)=>{if(phase==='BATTLE'&&dy)this.selectedItem=cycleItem(this.selectedItem,players.find(p=>p.id===selfId),Math.sign(dy));});
   this.game.canvas.addEventListener('wheel',event=>event.preventDefault(),{passive:false});
   this.game.canvas.addEventListener('contextmenu',event=>event.preventDefault());
+  for(const eventName of ['mousedown','mouseup'])this.game.canvas.addEventListener(eventName,event=>{if(phase==='PREPARATION'&&event.button===2){event.preventDefault();event.stopImmediatePropagation();}},{capture:true});
   this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();this.input.activePointer.reset();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
   // A neutral temporary 32px figure is used only until the original PNG is available.
   if(!this.textures.exists('player')){const g=this.make.graphics({x:0,y:0,add:false});g.fillStyle(0xeef5f7);g.fillCircle(16,9,6);g.fillRoundedRect(10,16,12,11,2);g.fillRect(9,26,5,5);g.fillRect(18,26,5,5);g.generateTexture('player',32,32);g.destroy();}
@@ -70,7 +71,7 @@ class GameScene extends Phaser.Scene{
  refresh(){
   this.dragging=false;this.pendingDrop=null;
   for(const object of this.children.list)if(object.name==='loot-popup'||object.name==='combat-effect')this.tweens.killTweensOf(object);
-  this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.boxProgress=new Map();this.inventoryCounts=new Map();this.inventorySelections=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
+  this.scopeMark=null;this.input.setDefaultCursor('default');this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.boxProgress=new Map();this.inventoryCounts=new Map();this.inventorySelections=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
   const camera=this.cameras.main;camera.stopFollow();camera.setScroll(0,0);camera.removeBounds();camera.setZoom(1);
   if(!mode)return;
   if(phase==='BATTLE'&&battle)this.buildBattle();
@@ -80,7 +81,7 @@ class GameScene extends Phaser.Scene{
   this.hud.add(this.text(20,54,mode==='solo'?'1人プレイ':`ルームコード：${room}　${count}/4人`));
   if(mode==='online'){
    const copy=this.text(20,82,'招待URLをコピー',{fontSize:'14px'}).setInteractive({useHandCursor:true});
-   copy.on('pointerdown',async()=>{const url=new URL(location.href);url.search='';url.searchParams.set('room',room);try{await navigator.clipboard.writeText(url.href);copy.setText('コピーしました');}catch{copy.setText('ルームコード：'+room);}});this.hud.add(copy);
+   copy.on('pointerdown',async pointer=>{if(pointer.button!==0)return;const url=new URL(location.href);url.search='';url.searchParams.set('room',room);try{await navigator.clipboard.writeText(url.href);copy.setText('コピーしました');}catch{copy.setText('ルームコード：'+room);}});this.hud.add(copy);
   }
   if(phase==='BATTLE'){
    this.hud.add(this.text(260,25,`${battle.city||''}　${BIOME_NAMES[battle.biome]||'森林地帯'}　WASD：移動 / Shift：ダッシュ`,{fontSize:'14px'}));
@@ -117,7 +118,7 @@ class GameScene extends Phaser.Scene{
    const background=this.add.rectangle(x,y,width,50,player.ready?0x245d50:mine?0x28465c:0x1b2c39).setStrokeStyle(1,mine?0x80d5ee:0x405461);
    this.hud.add(background);this.hud.add(this.text(x,y,`プレイヤー${player.slot}${mine?'（あなた）':''}\n${player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
    if(locked)background.setAlpha(.4);
-   if(mine&&!locked){background.setInteractive({useHandCursor:true});background.on('pointerdown',()=>{
+   if(mine&&!locked){background.setInteractive({useHandCursor:true});background.on('pointerdown',pointer=>{if(pointer.button!==0)return;
     if(mode==='solo'){if(!startBattle(route))return;discardUnclaimed(preparation,players);battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
     else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ready',ready:!player.ready}));
    });}
@@ -148,7 +149,7 @@ class GameScene extends Phaser.Scene{
     tooltipText.setText(`${info.name}\n特性：${info.trait}\n消費燃料：${info.fuel}　食料：${info.food}\n食料は1人あたり1つ`);
     tooltip.setPosition(Math.max(8,Math.min(width-244,p.x-118)),p.y+38).setVisible(true);
    });circle.on('pointerout',()=>{circle.setFillStyle(base);rings.forEach(r=>r.setStrokeStyle(1.5,base));tooltip.setVisible(false);});
-   circle.on('pointerdown',()=>{
+   circle.on('pointerdown',pointer=>{if(pointer.button!==0)return;
     if(!allowed.includes(node.id))return;
     if(mode==='solo'){if(selectNode(route,node.id)){players.forEach(p=>p.ready=false);this.refresh();}}
     else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'select_node',target:node.id}));
@@ -214,7 +215,8 @@ class GameScene extends Phaser.Scene{
   for(const p of players){
    const sprite=this.add.image(p.x,p.y,'player').setDisplaySize(32,32).setDepth(3);
    const label=this.text(p.x,p.y-25,`P${p.slot}${p.id===selfId?' ●':''}`,{fontSize:'12px',color:p.id===selfId?'#fff4ad':'#ffffff'}).setOrigin(.5).setDepth(4);
-   this.actors.set(p.id,{sprite,label});
+   const healBack=this.add.rectangle(p.x,p.y-30,28,5,0x101820).setDepth(10002).setVisible(false),healBar=this.add.rectangle(p.x-12,p.y-31,24,3,0x89e6ac).setOrigin(0).setDepth(10003).setVisible(false);
+   this.actors.set(p.id,{sprite,label,healBack,healBar});
   }
   const me=this.actors.get(selfId)?.sprite;
   if(me){this.cameras.main.removeBounds();this.cameras.main.centerOn(me.x,me.y);this.cameras.main.startFollow(me,false,1,1,0,0);}
@@ -223,16 +225,16 @@ class GameScene extends Phaser.Scene{
   if(!mode||phase!=='BATTLE'||!battle)return;
   const localPlayer=players.find(p=>p.id===selfId),usable=availableItems(localPlayer);if(!usable.includes(this.selectedItem))this.selectedItem=usable[0]||null;
   const pointer=this.input.activePointer,aim=this.cameras.main.getWorldPoint(pointer.x,pointer.y);
-  const k=this.keys,input={left:k.A.isDown,right:k.D.isDown,up:k.W.isDown,down:k.S.isDown,sprint:k.SHIFT.isDown,interact:k.E.isDown,use:pointer.leftButtonDown()&&document.hasFocus()&&!document.hidden,selected:this.selectedItem,aimX:aim.x,aimY:aim.y};
+  const k=this.keys,input={left:k.A.isDown,right:k.D.isDown,up:k.W.isDown,down:k.S.isDown,sprint:k.SHIFT.isDown,interact:k.E.isDown,use:pointer.leftButtonDown()&&document.hasFocus()&&!document.hidden,secondary:pointer.rightButtonDown()&&document.hasFocus()&&!document.hidden,selected:this.selectedItem,aimX:aim.x,aimY:aim.y};
   const meBefore=players.find(p=>p.id===selfId),nearby=meBefore?nearestBox(battle,meBefore):null;
   if(mode==='solo'){
    const now=performance.now();let remaining=Math.min(1,(now-(this.lastSimulation??now))/1000);this.lastSimulation=now;
    while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){preparation=finishBattleInventory(battle,players);phase='PREPARATION';battle=null;finishBattle(route);players.forEach(p=>p.ready=false);this.refresh();return;}}
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
-  const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();this.actors.delete(id);}
-  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId);}
+  const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();a.healBack.destroy();a.healBar.destroy();this.actors.delete(id);}
+  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId&&!(p.healProgress>0));a.healBack.setPosition(a.sprite.x,a.sprite.y-30).setVisible(p.healProgress>0);a.healBar.setPosition(a.sprite.x-12,a.sprite.y-31).setScale((p.healProgress||0)/3,1).setVisible(p.healProgress>0);}
   renderCombatEffects(this,battle);
-  const me=players.find(p=>p.id===selfId);updateCombatHud(this,me);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
+  const me=players.find(p=>p.id===selfId);updateCombatHud(this,me);updateCombatAim(this,me,input.secondary);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
   for(const box of battle.boxes||[]){
    if(box.opened&&!this.shownLoot.has(box.id)){this.shownLoot.add(box.id);this.showPickup(box);}
    const image=this.boxSprites.get(box.id);if(image)image.setAlpha(box.opened?.28:1).setTint(box.opened?0x7f8b8e:0xffffff);

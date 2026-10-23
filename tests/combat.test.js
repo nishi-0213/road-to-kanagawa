@@ -35,3 +35,19 @@ test('new loot stays unusable until claimed into personal inventory during prepa
  assert.ok(movePreparationItem(preparation,[p],p.id,{from:{area:'loot',index:0},to:{area:'inventory',index:0},itemId:item.id,targetItemId:null}));
  assert.deepEqual(availableItems(p),['medicine']);tick(map,p,{use:true,selected:'medicine'},3);assert.equal(p.hp,90);assert.equal(p.inventory.medicine,0);
 });
+test('strong knife requires a continuous half second and costs 30 percent once for 1.5x damage',()=>{
+ const p=make(),map={},input={selected:'knife',secondary:true,aimX:164,aimY:64};p.stamina=1;
+ tick(map,p,input,.45);assert.equal(map.effects.length,0);assert.equal(p.stamina,1);assert.ok(p.strongCharge>.44);
+ tick(map,p,input,.05);assert.equal(map.effects.length,1);assert.equal(map.effects[0].strong,true);assert.equal(map.effects[0].damageMultiplier,1.5);assert.equal(map.effects[0].damage,30);assert.equal(map.effects[0].angle,0);assert.equal(p.stamina,.7);assert.equal(p.strongCharge,0);
+ tick(map,p,input,1);assert.equal(map.effects.length,1);assert.equal(p.stamina,.7,'holding does not repeat strong attack');
+ tick(map,p,{},.05);tick(map,p,{selected:'knife',use:true,aimX:164,aimY:64},.05);assert.equal(map.effects.at(-1).damage,20);assert.equal(map.effects.at(-1).damageMultiplier,1);
+});
+test('release, switching, invalid aim and insufficient stamina prevent an incomplete strong attack',()=>{
+ const p=make(),map={},input={selected:'knife',secondary:true,aimX:164,aimY:64};p.stamina=1;
+ tick(map,p,input,.3);tick(map,p,{},.05);assert.equal(p.strongCharge,0);assert.equal(p.stamina,1);assert.equal(map.effects.length,0);
+ tick(map,p,input,.3);tick(map,p,{selected:'rifle',secondary:true},.05);assert.equal(p.strongCharge,0);
+ p.stamina=.29;tick(map,p,input,1);assert.equal(map.effects.length,0);assert.equal(p.stamina,.29);
+ p.stamina=.3;tick(map,p,{...input,aimX:NaN},.5);assert.equal(p.strongCharge,0);assert.equal(map.effects.length,0);
+ tick(map,p,{...input,use:true},.5);assert.equal(map.effects.length,1,'right click takes precedence over normal attack');assert.equal(p.stamina,0);assert.equal(p.exhausted,true);
+ const empty=ensureInventory({id:'empty',hp:100,stamina:1});tick(map,empty,input,.5);assert.equal(map.effects.length,1,'unowned knives cannot strong attack');
+});

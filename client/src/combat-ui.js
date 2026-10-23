@@ -5,7 +5,7 @@ export function renderCombatEffects(scene,map){
  if(scene.effectMap!==map.id){scene.effectMap=map.id;scene.seenEffects=new Set();}
  for(const effect of map.effects||[]){
   if(scene.seenEffects.has(effect.id))continue;scene.seenEffects.add(effect.id);
-  const duration=effect.type==='rifle'?Math.max(.05,effect.distance/700):.25;
+  const duration=effect.type==='rifle'?Math.max(.05,effect.distance/700):(effect.strong?.35:.25);
   if(effect.age>=duration)continue;
   const graphic=scene.add.graphics().setDepth(20000).setName('combat-effect');
   if(effect.type==='rifle'){
@@ -13,7 +13,7 @@ export function renderCombatEffects(scene,map){
    const distance=effect.distance*(effect.age/duration);graphic.setPosition(effect.x+Math.cos(effect.angle)*distance,effect.y+Math.sin(effect.angle)*distance);
    scene.tweens.add({targets:graphic,x:effect.x+Math.cos(effect.angle)*effect.distance,y:effect.y+Math.sin(effect.angle)*effect.distance,duration:(duration-effect.age)*1000,onComplete:()=>graphic.destroy()});
   }else{
-   graphic.setPosition(effect.x,effect.y).setRotation(effect.angle);graphic.lineStyle(12,0xccefff,.3);graphic.beginPath();graphic.arc(0,0,37,-Math.PI/2,Math.PI/2);graphic.strokePath();graphic.lineStyle(4,0xedfbff,1);graphic.beginPath();graphic.arc(0,0,42,-Math.PI/2,Math.PI/2);graphic.strokePath();
+   const radius=effect.strong?49:42,color=effect.strong?0xffcc68:0xedfbff;graphic.setPosition(effect.x,effect.y).setRotation(effect.angle);graphic.lineStyle(effect.strong?18:12,color,.3);graphic.beginPath();graphic.arc(0,0,radius-5,-Math.PI/2,Math.PI/2);graphic.strokePath();graphic.lineStyle(effect.strong?6:4,color,1);graphic.beginPath();graphic.arc(0,0,radius,-Math.PI/2,Math.PI/2);graphic.strokePath();
    scene.tweens.add({targets:graphic,alpha:0,scaleX:1.25,scaleY:1.25,duration:(duration-effect.age)*1000,onComplete:()=>graphic.destroy()});
   }
  }
@@ -23,8 +23,20 @@ export function renderCombatEffects(scene,map){
 export function updateCombatHud(scene,player){
  const items=availableItems(player);if(!items.includes(scene.selectedItem))scene.selectedItem=items[0]||null;
  const item=ITEMS.find(item=>item.id===scene.selectedItem);
- scene.equippedText?.setText(item?`選択：${item.name} ×${itemCount(player,item.id)}　ホイール：切替 / ${item.id==='medicine'?'左長押し3秒：治療':'左クリック：使用'}`:'使用できるアイテムを所持していません');
+ scene.equippedText?.setText(item?`選択：${item.name} ×${itemCount(player,item.id)}　ホイール：切替 / ${item.id==='medicine'?'左長押し3秒：治療':item.id==='rifle'?'左：射撃 / 右長押し：照準':'左：攻撃 / 右長押し0.5秒：強攻撃（スタミナ30%）'}`:'使用できるアイテムを所持していません');
  scene.hpBar?.setScale((player?.hp??MAX_HP)/MAX_HP,1);scene.hpText?.setText(`HP ${Math.ceil(player?.hp??MAX_HP)}/${MAX_HP}`);
  for(const [id,frame] of scene.inventorySelections||[])frame.setVisible(id===scene.selectedItem);
- const progress=player?.healProgress||0;scene.healBack?.setVisible(progress>0);scene.healBar?.setVisible(progress>0).setScale(progress/3,1);scene.healText?.setVisible(progress>0).setText(`治療中 ${progress.toFixed(1)} / 3秒`);
+ const charge=player?.strongCharge||0;scene.healBack?.setVisible(charge>0);scene.healBar?.setVisible(charge>0).setScale(charge/.5,1).setFillStyle(0xffcc68);scene.healText?.setVisible(charge>0).setText(`強攻撃のため ${charge.toFixed(1)} / 0.5秒`);
+}
+
+export function updateCombatAim(scene,player,secondary){
+ const visible=secondary&&scene.selectedItem==='rifle'&&itemCount(player,'rifle')>0&&(player.hp??MAX_HP)>0;
+ if(visible&&!scene.scopeMark){
+  const g=scene.add.graphics().setScrollFactor(0).setDepth(100001).setName('scope-mark');
+  g.lineStyle(4,0x101820,.9);g.strokeCircle(0,0,32);g.lineStyle(1.5,0xf0f5eb,.95);g.strokeCircle(0,0,32);g.lineStyle(1,0xb4d79d,.9);g.strokeCircle(0,0,19);
+  for(const sign of [-1,1]){g.lineBetween(sign*9,0,sign*44,0);g.lineBetween(0,sign*9,0,sign*44);for(const tick of [16,24]){g.lineBetween(sign*tick,-3,sign*tick,3);g.lineBetween(-3,sign*tick,3,sign*tick);}}
+  g.fillStyle(0xff7063,1);g.fillCircle(0,0,2);scene.scopeMark=g;
+ }
+ scene.scopeMark?.setVisible(visible).setPosition(scene.input.activePointer.x,scene.input.activePointer.y);
+ scene.input.setDefaultCursor(visible?'none':'default');
 }
