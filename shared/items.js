@@ -1,3 +1,4 @@
+import {ensureInventory} from './preparation.js';
 import {canStand} from './terrain.js';
 export const ITEMS=[{id:'food',name:'食料'},{id:'fuel',name:'燃料'},{id:'knife',name:'ナイフ'},{id:'rifle',name:'ライフル'}];
 export const OPEN_DISTANCE=48;
@@ -32,7 +33,7 @@ export function openBox(map,p,id,random=Math.random){
  if(!box||box.opened||Math.hypot(box.x-p.x,box.y-p.y)>OPEN_DISTANCE||!canReachBox(map,p,box))return null;
  const item=ITEMS[Math.min(3,Math.floor(random()*4))].id;
  const quantity=item==='food'||item==='fuel'?1+Math.min(3,Math.floor(random()*4)):1;
- p.inventory??=createInventory();p.inventory[item]+=quantity;
+ ensureInventory(p);if(item==='food'||item==='fuel')p.inventory[item]+=quantity;else p.battleLoot[item]+=quantity;
  box.opened=true;box.openedBy=p.id;box.loot={item,quantity};return box.loot;
 }
 export function stepLoot(map,players,inputs,seconds,random=Math.random){

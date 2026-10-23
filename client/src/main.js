@@ -1,3 +1,5 @@
+import {drawPreparationInventory,installPreparationDrag} from './preparation-ui.js';
+import {ensureInventory,createPreparation,finishBattleInventory,discardUnclaimed,movePreparationItem} from '../../shared/preparation.js';
 import {createRoute,nextNodes,selectNode,finishBattle,nodeInfo,CITIES,ringCount} from '../../shared/route.js';
 import {ITEMS,nearestBox} from '../../shared/items.js';
 import Phaser from 'phaser';
@@ -5,7 +7,7 @@ import './style.css';
 import {createBattle,stepBattle,TILE} from '../../shared/battle.js';
 import {BIOME_NAMES} from '../../shared/terrain.js';
 const form=document.querySelector('#login'),codeInput=document.querySelector('#code'),message=document.querySelector('#message');
-let socket=null,connecting=false,gameScene=null,mode=null,room='',count=0,connectionTimer,phase='PREPARATION',players=[],selfId=null,battle=null,route=null;
+let socket=null,connecting=false,gameScene=null,mode=null,room='',count=0,connectionTimer,phase='PREPARATION',players=[],selfId=null,battle=null,route=null,preparation=createPreparation();
 function busy(value){connecting=value;form.querySelectorAll('button,input').forEach(el=>el.disabled=value);}
 function report(text){message.textContent=text;}
 function showLogin(text=''){mode=null;form.hidden=false;busy(false);report(text);gameScene?.refresh();}
@@ -20,15 +22,15 @@ async function join(code){
  ws.onmessage=event=>{
   if(socket!==ws)return;
   try{const data=JSON.parse(event.data);if(data.type==='room'){
-   const previous=phase,oldMap=battle?.id;clearTimeout(connectionTimer);count=data.count;phase=data.phase;players=data.players;selfId=data.selfId;battle=data.battle;route=data.route;
+   const previous=phase,oldMap=battle?.id;clearTimeout(connectionTimer);count=data.count;phase=data.phase;players=data.players;selfId=data.selfId;battle=data.battle;route=data.route;preparation=data.preparation||createPreparation();
    if(mode!=='online'||previous!==phase||oldMap!==battle?.id)enter('online');
-   else if(phase==='PREPARATION')gameScene?.refresh();
+   else if(phase==='PREPARATION'){if(gameScene?.dragging)gameScene.refreshAfterDrag=true;else gameScene?.refresh();}
   }}catch{}
  };
  ws.onerror=()=>report('接続できません。ルームコード・満員・通信状態をご確認ください。');
  ws.onclose=()=>{if(socket!==ws)return;clearTimeout(connectionTimer);socket=null;showLogin('接続が終了しました。再度入室してください。');};
 }
-document.querySelector('#solo').onclick=()=>{if(!connecting){phase='PREPARATION';battle=null;route=createRoute();selfId='solo';players=[{id:'solo',slot:1,ready:false}];enter('solo');}};
+document.querySelector('#solo').onclick=()=>{if(!connecting){phase='PREPARATION';battle=null;route=createRoute();selfId='solo';preparation=createPreparation();players=[ensureInventory({id:'solo',slot:1,ready:false})];enter('solo');}};
 document.querySelector('#create').onclick=async()=>{
  if(connecting)return;busy(true);report('ルーム作成中…');
  try{const response=await fetch('/api/rooms',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error();const data=await response.json();busy(false);await join(data.code);}catch{busy(false);report('ルームを作成できませんでした。');}
@@ -43,6 +45,7 @@ class GameScene extends Phaser.Scene{
  preload(){const url=Object.values(playerImages)[0];if(url)this.load.image('player',url);if(treeImage)this.load.image('tree',treeImage);for(const key of ['box','stone',...ITEMS.map(i=>i.id)]){const file=Object.entries(treeImages).find(([name])=>name.split('/').pop().toLowerCase()===key+'.png')?.[1];if(file)this.load.image(key,file);}}
  create(){
   gameScene=this;this.actors=new Map();this.lastSend=0;this.lootMapId=null;this.shownLoot=new Set();
+  this.installInventoryDrag();
   this.keys=this.input.keyboard.addKeys('W,A,S,D,SHIFT,E');
   this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
   // A neutral temporary 32px figure is used only until the original PNG is available.
@@ -52,8 +55,15 @@ class GameScene extends Phaser.Scene{
   const zone=this.make.graphics({x:0,y:0,add:false});zone.fillStyle(0xffffff,.4);zone.fillRect(0,0,64,96);zone.lineStyle(2,0xffffff,1);zone.strokeRect(1,1,62,94);zone.generateTexture('exit-zone',64,96);zone.destroy();
   this.scale.on('resize',()=>this.refresh());this.refresh();
  }
+ installInventoryDrag(){
+  installPreparationDrag(this,{isPreparation:()=>phase==='PREPARATION',onMove:action=>{
+   if(mode==='solo'){movePreparationItem(preparation,players,selfId,action);this.refresh();}
+   else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify(action));
+  },onRefresh:()=>this.refresh()});
+ }
  text(x,y,text,style={}){return this.add.text(x,y,text,{...STYLE,...style});}
  refresh(){
+  this.dragging=false;this.pendingDrop=null;
   for(const object of this.children.list)if(object.name==='loot-popup')this.tweens.killTweensOf(object);
   this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.boxProgress=new Map();this.inventoryCounts=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
   const camera=this.cameras.main;camera.stopFollow();camera.setScroll(0,0);camera.removeBounds();camera.setZoom(1);
@@ -79,11 +89,12 @@ class GameScene extends Phaser.Scene{
  }
  buildInventory(){
   this.hud.add(this.add.rectangle(12,126,218,180,0x101820,.85).setOrigin(0));
-  this.hud.add(this.text(24,134,'所持アイテム',{fontSize:'16px',color:'#eff7fa'}));
+  this.hud.add(this.text(24,134,'所持・今回取得アイテム',{fontSize:'16px',color:'#eff7fa'}));
   ITEMS.forEach((item,index)=>{const y=174+index*34;this.hud.add(this.add.image(36,y,item.id).setDisplaySize(24,24));this.hud.add(this.text(58,y,item.name).setOrigin(0,.5));const count=this.text(206,y,'0',{color:'#eff7fa'}).setOrigin(1,.5);this.hud.add(count);this.inventoryCounts.set(item.id,count);});
  }
  preparation(){
   this.drawRoute();
+  drawPreparationInventory(this,players,selfId,preparation);
   const startY=Math.max(145,this.scale.height/3+85),locked=route?.canAdvance||route?.finished;
   const width=Math.min(230,this.scale.width-40),x=this.scale.width-20-width/2;
   const gap=Math.min(70,Math.max(52,(this.scale.height-startY)/Math.max(1,players.length)));
@@ -93,7 +104,7 @@ class GameScene extends Phaser.Scene{
    this.hud.add(background);this.hud.add(this.text(x,y,`プレイヤー${player.slot}${mine?'（あなた）':''}\n${player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
    if(locked)background.setAlpha(.4);
    if(mine&&!locked){background.setInteractive({useHandCursor:true});background.on('pointerdown',()=>{
-    if(mode==='solo'){battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
+    if(mode==='solo'){discardUnclaimed(preparation,players);battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
     else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ready',ready:!player.ready}));
    });}
   });
@@ -200,7 +211,7 @@ class GameScene extends Phaser.Scene{
   const meBefore=players.find(p=>p.id===selfId),nearby=meBefore?nearestBox(battle,meBefore):null;
   if(mode==='solo'){
    const now=performance.now();let remaining=Math.min(1,(now-(this.lastSimulation??now))/1000);this.lastSimulation=now;
-   while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){phase='PREPARATION';battle=null;finishBattle(route);players.forEach(p=>p.ready=false);this.refresh();return;}}
+   while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){preparation=finishBattleInventory(battle,players);phase='PREPARATION';battle=null;finishBattle(route);players.forEach(p=>p.ready=false);this.refresh();return;}}
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
   const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();this.actors.delete(id);}
   for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId);}
@@ -211,7 +222,7 @@ class GameScene extends Phaser.Scene{
    const progress=box.opened?0:Math.max(0,...players.filter(p=>p.lootBoxId===box.id).map(p=>p.lootProgress||0)),bar=this.boxProgress.get(box.id);
    if(bar){bar.back.setVisible(progress>0);bar.fill.setVisible(progress>0).setScale(progress,1);}
   }
-  for(const item of ITEMS)this.inventoryCounts.get(item.id)?.setText(String(me?.inventory?.[item.id]||0));
+  for(const item of ITEMS)this.inventoryCounts.get(item.id)?.setText(String((me?.inventory?.[item.id]||0)+(me?.battleLoot?.[item.id]||0)));
   this.boxHint?.setText(nearby?'E長押し（1秒）：アイテムボックスを開ける':'');
   const all=battle.inside===players.length&&players.length>0,color=all?0x51baff:battle.inside>0?0xbaff45:0xffd84a;
   this.exitTint?.setTint(color);
