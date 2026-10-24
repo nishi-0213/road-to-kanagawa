@@ -12,28 +12,36 @@ import './style.css';
 import {createBattle,stepBattle,TILE} from '../../shared/battle.js';
 import {BIOME_NAMES} from '../../shared/terrain.js';
 const form=document.querySelector('#login'),codeInput=document.querySelector('#code'),message=document.querySelector('#message');
+let resumeToken=null,reconnectAttempts=0,reconnectTimer=null,heartbeat=null,lastReceived=0,connectionStatus='';
+function setConnectionStatus(text){connectionStatus=text;if(gameScene?.connectionNotice?.active)gameScene.connectionNotice.setText(text).setVisible(Boolean(text));}
 let socket=null,connecting=false,gameScene=null,mode=null,room='',count=0,connectionTimer,phase='PREPARATION',players=[],selfId=null,battle=null,route=null,preparation=createPreparation();
 function busy(value){connecting=value;form.querySelectorAll('button,input').forEach(el=>el.disabled=value);}
 function report(text){message.textContent=text;}
 function showLogin(text=''){mode=null;form.hidden=false;busy(false);report(text);gameScene?.refresh();}
 function enter(nextMode){mode=nextMode;form.hidden=true;busy(false);report('');gameScene?.refresh();}
-async function join(code){
- if(connecting)return;code=code.trim().toUpperCase();
+async function join(code,resuming=false){
+ if(connecting&&!resuming)return;
+ if(!resuming){resumeToken=null;reconnectAttempts=0;clearTimeout(reconnectTimer);setConnectionStatus('');}code=code.trim().toUpperCase();
  if(!/^[A-F0-9]{12}$/.test(code)){report('12文字のルームコードを入力してください。');return;}
  busy(true);report('接続中…');room=code;
- const url=new URL(`/api/rooms/${code}/ws`,location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
+ const url=new URL(`/api/rooms/${code}/ws`,location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';if(resuming&&resumeToken)url.searchParams.set('resume',resumeToken);
  const ws=socket=new WebSocket(url);
- connectionTimer=setTimeout(()=>{if(socket===ws){socket=null;ws.close();showLogin('接続がタイムアウトしました。');}},10000);
+ connectionTimer=setTimeout(()=>{if(socket===ws)ws.close(4000,'Connection timeout');},10000);
+ ws.onopen=()=>{lastReceived=Date.now();clearInterval(heartbeat);heartbeat=setInterval(()=>{if(socket!==ws||ws.readyState!==WebSocket.OPEN)return;if(Date.now()-lastReceived>25000)ws.close(4000,'Heartbeat timeout');else ws.send('ping');},10000);};
  ws.onmessage=event=>{
-  if(socket!==ws)return;
+  if(socket!==ws)return;lastReceived=Date.now();if(event.data==='pong')return;
   try{const data=JSON.parse(event.data);if(data.type==='room'){
-   const previous=phase,oldMap=battle?.id;clearTimeout(connectionTimer);count=data.count;phase=data.phase;players=data.players;selfId=data.selfId;battle=data.battle;route=data.route;preparation=data.preparation||createPreparation();
+   const previous=phase,oldMap=battle?.id;clearTimeout(connectionTimer);resumeToken=data.selfResumeToken||resumeToken;if(connecting)busy(false);reconnectAttempts=0;setConnectionStatus('');count=data.count;phase=data.phase;players=data.players;selfId=data.selfId;battle=data.battle;route=data.route;preparation=data.preparation||createPreparation();
    if(mode!=='online'||previous!==phase||oldMap!==battle?.id)enter('online');
    else if(phase==='PREPARATION'){if(gameScene?.dragging)gameScene.refreshAfterDrag=true;else gameScene?.refresh();}
   }}catch{}
  };
- ws.onerror=()=>report('接続できません。ルームコード・満員・通信状態をご確認ください。');
- ws.onclose=()=>{if(socket!==ws)return;clearTimeout(connectionTimer);socket=null;showLogin('接続が終了しました。再度入室してください。');};
+ ws.onerror=()=>{if(!resumeToken)report('接続できません。ルームコード・満員・通信状態をご確認ください。');};
+ ws.onclose=event=>{
+  if(socket!==ws)return;clearTimeout(connectionTimer);clearInterval(heartbeat);socket=null;
+  if(resumeToken&&event.code!==1008&&reconnectAttempts<6){reconnectAttempts++;busy(true);setConnectionStatus(`通信が途切れました。再接続中… ${reconnectAttempts}/6`);reconnectTimer=setTimeout(()=>join(room,true),Math.min(6000,1000*2**(reconnectAttempts-1)));return;}
+  setConnectionStatus('');resumeToken=null;showLogin(`接続が終了しました（コード ${event.code}${event.reason?'：'+event.reason:''}）。再度入室してください。`);
+ };
 }
 document.querySelector('#solo').onclick=()=>{if(!connecting){phase='PREPARATION';battle=null;route=createRoute();selfId='solo';preparation=createPreparation();players=[ensureInventory({id:'solo',slot:1,ready:false})];enter('solo');}};
 document.querySelector('#create').onclick=async()=>{
@@ -106,6 +114,7 @@ class GameScene extends Phaser.Scene{
    this.buildInventory();
    this.boxHint=this.text(this.scale.width/2,this.scale.height-32,'',{fontSize:'16px',color:'#ffdf8b',backgroundColor:'#101820'}).setOrigin(.5);this.hud.add(this.boxHint);
   }else this.preparation();
+  this.connectionNotice=this.text(this.scale.width/2,130,connectionStatus,{fontSize:'16px',color:'#ffdf8b',backgroundColor:'#101820'}).setOrigin(.5,0).setVisible(Boolean(connectionStatus));this.hud.add(this.connectionNotice);
  }
  buildInventory(){
   this.hud.add(this.add.rectangle(12,126,218,ITEMS.length*34+50,0x101820,.85).setOrigin(0));
@@ -121,7 +130,7 @@ class GameScene extends Phaser.Scene{
   players.forEach((player,index)=>{
    const mine=player.id===selfId,y=startY+index*gap;
    const background=this.add.rectangle(x,y,width,50,player.ready?0x245d50:mine?0x28465c:0x1b2c39).setStrokeStyle(1,mine?0x80d5ee:0x405461);
-   this.hud.add(background);this.hud.add(this.text(x,y,`プレイヤー${player.slot}${mine?'（あなた）':''}\n${player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
+   this.hud.add(background);this.hud.add(this.text(x,y,`プレイヤー${player.slot}${mine?'（あなた）':''}\n${player.connected===false?'再接続を待っています':player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
    if(locked)background.setAlpha(.4);
    if(mine&&!locked){background.setInteractive({useHandCursor:true});background.on('pointerdown',pointer=>{if(pointer.button!==0)return;
     if(mode==='solo'){if(!startBattle(route))return;discardUnclaimed(preparation,players);battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
@@ -250,8 +259,9 @@ class GameScene extends Phaser.Scene{
    if(bar){bar.back.setVisible(progress>0);bar.fill.setVisible(progress>0).setScale(progress,1);}
   }
   for(const item of ITEMS)this.inventoryCounts.get(item.id)?.setText(String((me?.inventory?.[item.id]||0)+(me?.battleLoot?.[item.id]||0)));
-  this.boxHint?.setText(nearby?'E長押し（1秒）：アイテムボックスを開ける':'');
-  const all=battle.inside===players.length&&players.length>0,color=all?0x51baff:battle.inside>0?0xbaff45:0xffd84a;
+  const waiting=players.some(player=>player.connected===false);
+  this.boxHint?.setText(waiting?'プレイヤーの再接続を待っています（最大30秒）':nearby?'E長押し（1秒）：アイテムボックスを開ける':'');
+  const all=battle.inside===players.length&&players.length>0&&!waiting,color=all?0x51baff:battle.inside>0?0xbaff45:0xffd84a;
   this.exitTint?.setTint(color);
   if(this.exitGlow){this.exitGlow.color=color;this.exitGlow.outerStrength=4+Math.sin(time/240)*.7;}
   this.progressBack?.setVisible(all);this.progress?.setVisible(all).setScale(battle.escape/3,1);

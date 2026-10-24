@@ -19,21 +19,24 @@ export default {
     return env.ASSETS.fetch(request);
   }
 };
+const RECONNECT_GRACE_MS=30000;
 export class GameRoom{
   constructor(ctx){
-    this.ctx=ctx;this.initialized=false;this.phase='PREPARATION';this.battle=null;this.inputs=new Map();this.timer=null;this.route=null;this.preparation=createPreparation();
+    this.ctx=ctx;this.initialized=false;this.phase='PREPARATION';this.battle=null;this.inputs=new Map();this.timer=null;this.route=null;this.preparation=createPreparation();this.disconnected=new Map();
     ctx.blockConcurrencyWhile(async()=>{
+      if(typeof WebSocketRequestResponsePair!=='undefined'&&ctx.setWebSocketAutoResponse)ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
+      this.disconnected=new Map((await ctx.storage.get('disconnected')||[]).filter(([,entry])=>entry.expiresAt>Date.now()));
       // Upgrade sockets opened by the previous room-only deployment.
       const sockets=this.sockets();
       const used=new Set(sockets.map(ws=>ws.deserializeAttachment()?.slot).filter(Boolean));
       for(const ws of sockets){if(!ws.deserializeAttachment()){const slot=[1,2,3,4].find(n=>!used.has(n));used.add(slot);ws.serializeAttachment({id:crypto.randomUUID(),slot,ready:false});}}
-      for(const ws of sockets){const player=ensureInventory(ws.deserializeAttachment());ws.serializeAttachment(player);}
+      for(const ws of sockets){const player=ensureInventory(ws.deserializeAttachment());player.resumeToken??=crypto.randomUUID();ws.serializeAttachment(player);this.disconnected.delete(player.id);}
       this.preparation=await ctx.storage.get('preparation')||createPreparation();
       this.initialized=await ctx.storage.get('initialized')===true;
       this.phase=await ctx.storage.get('phase')||'PREPARATION';
       const savedRoute=await ctx.storage.get('route');this.route=upgradeRoute(savedRoute);
       if(savedRoute?.version!==2)await ctx.storage.put('route',this.route);
-      if(!this.sockets().length){this.phase='PREPARATION';this.route=createRoute();this.preparation=createPreparation();await ctx.storage.put({phase:this.phase,route:this.route,preparation:this.preparation});}
+      if(!this.sockets().length&&!this.disconnected.size){this.phase='PREPARATION';this.route=createRoute();this.preparation=createPreparation();await ctx.storage.put({phase:this.phase,route:this.route,preparation:this.preparation});}
       if(this.phase==='BATTLE'){if(!this.route.battleStarted.includes(this.route.current))this.route.battleStarted.push(this.route.current);await ctx.storage.put('route',this.route);this.battle=await ctx.storage.get('battle');if(this.battle){this.battle.escape=0;this.startTimer();}else{this.phase='PREPARATION';await ctx.storage.put('phase',this.phase);}}
     });
   }
@@ -43,22 +46,30 @@ export class GameRoom{
     }
     if(!this.initialized)return new Response('Room not found',{status:404});
     if(request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return new Response('WebSocket required',{status:426});
-    if(this.phase!=='PREPARATION')return new Response('Battle already started',{status:409});
-    const sockets=this.sockets();
-    if(sockets.length>=4)return new Response('Room full',{status:409});
-    const used=new Set(sockets.map(ws=>ws.deserializeAttachment().slot));
+    const sockets=this.sockets(),token=new URL(request.url).searchParams.get('resume');
+    const active=token?sockets.find(ws=>ws.deserializeAttachment().resumeToken===token):null;
+    const saved=token?[...this.disconnected.values()].find(entry=>entry.expiresAt>Date.now()&&entry.player.resumeToken===token):null;
+    const resumed=active?.deserializeAttachment()||saved?.player;
+    if(token&&!resumed)return new Response('Session expired',{status:401});
+    if(!resumed&&this.phase!=='PREPARATION')return new Response('Battle already started',{status:409});
+    if(!resumed&&this.players().length>=4)return new Response('Room full',{status:409});
+    const used=new Set(this.players().map(player=>player.slot));
     const slot=[1,2,3,4].find(n=>!used.has(n));
     const [client,server]=Object.values(new WebSocketPair());
-    server.serializeAttachment(ensureInventory({id:crypto.randomUUID(),slot,ready:false}));
-    this.ctx.acceptWebSocket(server);this.broadcast();
+    server.serializeAttachment(resumed||ensureInventory({id:crypto.randomUUID(),slot,ready:false,resumeToken:crypto.randomUUID()}));
+    this.ctx.acceptWebSocket(server);
+    if(resumed){this.disconnected.delete(resumed.id);try{active?.close(1000,'Connection replaced');}catch{}await this.saveDisconnected();}
+    this.broadcast();
     return new Response(null,{status:101,webSocket:client});
   }
   sockets(){return this.ctx.getWebSockets().filter(ws=>ws.readyState===1);}
-  players(){return this.sockets().map(ws=>ws.deserializeAttachment()).sort((a,b)=>a.slot-b.slot);}
+  players(){const active=this.sockets().map(ws=>ws.deserializeAttachment()),ids=new Set(active.map(player=>player.id));return [...active,...[...this.disconnected.values()].filter(entry=>entry.expiresAt>Date.now()&&!ids.has(entry.player.id)).map(entry=>entry.player)].sort((a,b)=>a.slot-b.slot);}
+  async saveDisconnected(){await this.ctx.storage.put('disconnected',[...this.disconnected]);if(this.disconnected.size&&this.ctx.storage.setAlarm)await this.ctx.storage.setAlarm(Math.min(...[...this.disconnected.values()].map(entry=>entry.expiresAt)));}
+  async alarm(){for(const [id,entry] of this.disconnected)if(entry.expiresAt<=Date.now())this.disconnected.delete(id);await this.saveDisconnected();await this.advance();}
   broadcast(){
-    const players=this.players();
+    const players=this.players().map(({resumeToken,...player})=>({...player,connected:!this.disconnected.has(player.id)}));
     for(const ws of this.sockets()){
-      try{ws.send(JSON.stringify({type:'room',count:players.length,phase:this.phase,route:this.route,preparation:this.preparation,battle:this.battle,players,selfId:ws.deserializeAttachment().id}));}catch{}
+      try{ws.send(JSON.stringify({type:'room',count:players.length,phase:this.phase,route:this.route,preparation:this.preparation,battle:this.battle,players,selfId:ws.deserializeAttachment().id,selfResumeToken:ws.deserializeAttachment().resumeToken}));}catch{}
     }
   }
   async advance(){
@@ -87,7 +98,7 @@ export class GameRoom{
     if(!players.length){this.stopTimer();return;}
     const revisionBefore=this.battle.itemRevision||0;
     const openedBefore=(this.battle.boxes||[]).filter(box=>box.opened).length;
-    const complete=stepBattle(this.battle,players,this.inputs,dt);
+    let complete=stepBattle(this.battle,players,this.inputs,dt);if(this.disconnected.size){this.battle.escape=0;complete=false;}
     if((this.battle.itemRevision||0)!==revisionBefore||(this.battle.boxes||[]).filter(box=>box.opened).length>openedBefore)this.ctx.waitUntil(this.ctx.storage.put('battle',this.battle));
     for(const ws of this.sockets()){const p=players.find(p=>p.id===ws.deserializeAttachment().id);if(p)ws.serializeAttachment(p);}
     if(complete){
@@ -100,6 +111,7 @@ export class GameRoom{
     this.broadcast();
   }
   async webSocketMessage(ws,raw){
+    if(raw==='ping'){ws.send('pong');return;}
     if(typeof raw!=='string'||raw.length>768){ws.close(1008,'Invalid message');return;}
     let message;try{message=JSON.parse(raw);}catch{ws.close(1008,'Invalid JSON');return;}
     if(message?.type==='move_item'){
@@ -128,6 +140,11 @@ export class GameRoom{
     ws.serializeAttachment({...player,ready:message.ready});
     await this.advance();
   }
-  async webSocketClose(ws){try{ws.close(1000);}finally{await this.advance();}}
-  async webSocketError(ws){ws.close(1011,'Connection error');await this.advance();}
+  async webSocketClose(ws){
+    try{ws.close(1000);}catch{}
+    const player=ws.deserializeAttachment();if(!player||this.sockets().some(client=>client!==ws&&client.deserializeAttachment().id===player.id))return;
+    if(!this.disconnected.has(player.id))this.disconnected.set(player.id,{player:{...player,ready:false},expiresAt:Date.now()+RECONNECT_GRACE_MS});
+    this.inputs.delete(player.id);await this.saveDisconnected();if(this.battle)await this.ctx.storage.put('battle',this.battle);await this.advance();
+  }
+  async webSocketError(ws){try{ws.close(1011,'Connection error');}catch{}await this.webSocketClose(ws);}
 }
