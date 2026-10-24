@@ -1,3 +1,4 @@
+import {createAppearanceLayers,updateAppearanceLayers} from './player-appearance.js';
 import {createOutfit,updateOutfit} from './player-outfit.js';
 import {getDefense,EQUIPMENT_SLOTS} from '../../shared/preparation.js';
 import {ITEMS} from '../../shared/items.js';
@@ -46,6 +47,7 @@ export function drawPreparationInventory(scene,players,selfId,state){
    slot('equipment',index,gridX+cell*.5,y,cell,player.equipmentSlots?.[index]||null,mine,player.id);
   });
   const preview=scene.add.image(gridX+cell*2.5,equipmentY+cell*1.5,'player').setDisplaySize(Math.min(64,cell*1.6),Math.min(64,cell*1.6));scene.hud.add(preview);
+  const appearance=createAppearanceLayers(scene,preview);scene.hud.add([appearance.skin,appearance.hair]);updateAppearanceLayers(preview,appearance,player);
   const layers=createOutfit(scene,preview);for(const layer of layers)scene.hud.add(layer);updateOutfit(preview,layers,player);
  });
 }

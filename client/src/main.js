@@ -1,3 +1,5 @@
+import {createSkinMask,createAppearanceLayers,updateAppearanceLayers} from './player-appearance.js';
+import {HAIRSTYLES} from '../../shared/appearance.js';
 import {createOutfit,updateOutfit,createHeldItem,updateHeldItem} from './player-outfit.js';
 import {cycleItem,renderCombatEffects,updateCombatHud,updateCombatAim} from './combat-ui.js';
 import {availableItems} from '../../shared/combat.js';
@@ -45,7 +47,7 @@ const treeImage=Object.entries(treeImages).find(([name])=>/\/tree\.png$/i.test(n
 const playerImages=import.meta.glob('../assets/player.png',{eager:true,query:'?url',import:'default'});
 const STYLE={fontFamily:'sans-serif',fontSize:'16px',color:'#b8cbd7'};
 class GameScene extends Phaser.Scene{
- preload(){const url=Object.values(playerImages)[0];if(url)this.load.image('player',url);if(treeImage)this.load.image('tree',treeImage);for(const key of ['box','stone',...ITEMS.map(i=>i.id)]){const file=Object.entries(treeImages).find(([name])=>name.split('/').pop().toLowerCase()===key+'.png')?.[1];if(file)this.load.image(key,file);}}
+ preload(){const url=Object.values(playerImages)[0];if(url)this.load.image('player',url);if(treeImage)this.load.image('tree',treeImage);for(const key of ['box','stone',...ITEMS.map(i=>i.id),...HAIRSTYLES.filter(Boolean)]){const file=Object.entries(treeImages).find(([name])=>name.split('/').pop().toLowerCase()===key+'.png')?.[1];if(file)this.load.image(key,file);}}
  create(){
   gameScene=this;this.actors=new Map();this.lastSend=0;this.lootMapId=null;this.shownLoot=new Set();
   this.installInventoryDrag();
@@ -57,6 +59,7 @@ class GameScene extends Phaser.Scene{
   this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();this.input.activePointer.reset();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
   // A neutral temporary 32px figure is used only until the original PNG is available.
   if(!this.textures.exists('player')){const g=this.make.graphics({x:0,y:0,add:false});g.fillStyle(0xeef5f7);g.fillCircle(16,9,6);g.fillRoundedRect(10,16,12,11,2);g.fillRect(9,26,5,5);g.fillRect(18,26,5,5);g.generateTexture('player',32,32);g.destroy();}
+  createSkinMask(this);
   const ground=this.make.graphics({x:0,y:0,add:false});ground.fillStyle(0x344a38);ground.fillRect(0,0,32,32);ground.lineStyle(1,0x3c5540);ground.strokeRect(.5,.5,31,31);ground.fillStyle(0x4a6348);ground.fillRect(5,7,2,2);ground.fillRect(22,24,3,1);ground.generateTexture('ground',32,32);ground.destroy();
   if(!this.textures.exists('tree')){const tree=this.make.graphics({x:0,y:0,add:false});tree.fillStyle(0x74563a);tree.fillRect(13,24,6,8);tree.fillStyle(0x1f432f);tree.fillCircle(16,14,13);tree.fillStyle(0x366444);tree.fillCircle(12,10,9);tree.generateTexture('tree',32,32);tree.destroy();}
   const zone=this.make.graphics({x:0,y:0,add:false});zone.fillStyle(0xffffff,.4);zone.fillRect(0,0,64,96);zone.lineStyle(2,0xffffff,1);zone.strokeRect(1,1,62,94);zone.generateTexture('exit-zone',64,96);zone.destroy();
@@ -218,9 +221,10 @@ class GameScene extends Phaser.Scene{
    const sprite=this.add.image(p.x,p.y,'player').setDisplaySize(32,32).setDepth(3);
    const label=this.text(p.x,p.y-25,`P${p.slot}${p.id===selfId?' ●':''}`,{fontSize:'12px',color:p.id===selfId?'#fff4ad':'#ffffff'}).setOrigin(.5).setDepth(4);
    const healBack=this.add.rectangle(p.x,p.y-30,28,5,0x101820).setDepth(10002).setVisible(false),healBar=this.add.rectangle(p.x-12,p.y-31,24,3,0x89e6ac).setOrigin(0).setDepth(10003).setVisible(false);
+   const appearance=createAppearanceLayers(this,sprite);updateAppearanceLayers(sprite,appearance,p);
    const outfit=createOutfit(this,sprite);updateOutfit(sprite,outfit,p);
    const heldItem=createHeldItem(this,sprite);
-   this.actors.set(p.id,{sprite,label,healBack,healBar,outfit,heldItem});
+   this.actors.set(p.id,{sprite,label,healBack,healBar,appearance,outfit,heldItem});
   }
   const me=this.actors.get(selfId)?.sprite;
   if(me){this.cameras.main.removeBounds();this.cameras.main.centerOn(me.x,me.y);this.cameras.main.startFollow(me,false,1,1,0,0);}
@@ -235,8 +239,8 @@ class GameScene extends Phaser.Scene{
    const now=performance.now();let remaining=Math.min(1,(now-(this.lastSimulation??now))/1000);this.lastSimulation=now;
    while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){preparation=finishBattleInventory(battle,players);phase='PREPARATION';battle=null;finishBattle(route);players.forEach(p=>p.ready=false);this.refresh();return;}}
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
-  const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();a.healBack.destroy();a.healBar.destroy();a.outfit.forEach(layer=>layer.destroy());a.heldItem.destroy();this.actors.delete(id);}
-  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);updateOutfit(a.sprite,a.outfit,p);if(p.id===selfId)updateHeldItem(a,p,this.selectedItem,Math.atan2(aim.y-p.y,aim.x-p.x));else updateHeldItem(a,p);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId&&!(p.healProgress>0));a.healBack.setPosition(a.sprite.x,a.sprite.y-30).setVisible(p.healProgress>0);a.healBar.setPosition(a.sprite.x-12,a.sprite.y-31).setScale((p.healProgress||0)/3,1).setVisible(p.healProgress>0);}
+  const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();a.healBack.destroy();a.healBar.destroy();a.outfit.forEach(layer=>layer.destroy());a.heldItem.destroy();a.appearance.skin.destroy();a.appearance.hair.destroy();this.actors.delete(id);}
+  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);updateAppearanceLayers(a.sprite,a.appearance,p);updateOutfit(a.sprite,a.outfit,p);if(p.id===selfId)updateHeldItem(a,p,this.selectedItem,Math.atan2(aim.y-p.y,aim.x-p.x));else updateHeldItem(a,p);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId&&!(p.healProgress>0));a.healBack.setPosition(a.sprite.x,a.sprite.y-30).setVisible(p.healProgress>0);a.healBar.setPosition(a.sprite.x-12,a.sprite.y-31).setScale((p.healProgress||0)/3,1).setVisible(p.healProgress>0);}
   renderCombatEffects(this,battle);
   const me=players.find(p=>p.id===selfId);updateCombatHud(this,me);updateCombatAim(this,me,input.secondary);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
   for(const box of battle.boxes||[]){

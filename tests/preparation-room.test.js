@@ -15,6 +15,7 @@ test('room handler enforces concurrent single claim, own-slot permissions, prepa
  prep.loot[2]={id:'shared-pants',item:'pants',quantity:1};prep.loot[3]={id:'shared-hat',item:'hat',quantity:1};
  const values=new Map([['initialized',true],['phase','PREPARATION'],['route',createRoute(()=>.4)],['preparation',prep]]),ctx={getWebSockets:()=>[a,b],storage:{get:async key=>clone(values.get(key)),put:async(key,value)=>{if(typeof key==='string')values.set(key,clone(value));else for(const [k,v] of Object.entries(key))values.set(k,clone(v));}},blockConcurrencyWhile(fn){this.ready=fn();},waitUntil(promise){this.pending=promise;}};
  const room=new GameRoom(ctx);await ctx.ready;
+ const appearanceA=structuredClone(a.player.appearance),appearanceB=structuredClone(b.player.appearance);
  const action={type:'move_item',from:{area:'loot',index:0},to:{area:'inventory',index:0},itemId:'shared-knife',targetItemId:null};
  try{
   await Promise.all([room.webSocketMessage(a,JSON.stringify(action)),room.webSocketMessage(b,JSON.stringify(action))]);assert.equal(a.player.inventory.knife+b.player.inventory.knife,1);assert.equal(room.preparation.loot[0],null);assert.equal(values.get('preparation').loot[0],null);
@@ -27,8 +28,9 @@ test('room handler enforces concurrent single claim, own-slot permissions, prepa
   await room.webSocketMessage(b,JSON.stringify({type:'move_item',from:{area:'inventory',index:1},to:{area:'equipment',index:0},itemId:'shared-hat',targetItemId:null}));
   assert.equal(a.player.equipmentSlots[2].item,'pants');assert.equal(b.messages.at(-1).players.find(p=>p.id==='a').equipmentSlots[2].item,'pants');
   await room.webSocketMessage(a,JSON.stringify({type:'move_item',from:{area:'equipment',index:2},to:{area:'equipment',index:0},itemId:'shared-pants',targetItemId:null}));assert.equal(a.player.equipmentSlots[2].item,'pants');assert.equal(a.player.equipmentSlots[0],null);
+  assert.deepEqual(b.messages.at(-1).players.find(p=>p.id==='a').appearance,appearanceA);assert.deepEqual(a.player.appearance,appearanceA);assert.deepEqual(b.player.appearance,appearanceB);
   assert.equal(a.player.defense,2);assert.equal(b.player.defense,1);assert.equal(b.messages.at(-1).players.find(p=>p.id==='a').defense,2);
-  await room.webSocketMessage(a,JSON.stringify({type:'ready',ready:true}));await room.webSocketMessage(b,JSON.stringify({type:'ready',ready:true}));assert.equal(room.phase,'BATTLE');assert.deepEqual(room.route.battleStarted,[room.route.current]);assert.ok(room.preparation.loot.every(x=>!x));assert.equal(winner.player.inventory.knife,1);assert.equal(winner.player.inventorySlots[0].id,'shared-knife');
+  await room.webSocketMessage(a,JSON.stringify({type:'ready',ready:true}));await room.webSocketMessage(b,JSON.stringify({type:'ready',ready:true}));assert.equal(room.phase,'BATTLE');assert.deepEqual(a.player.appearance,appearanceA);assert.deepEqual(b.player.appearance,appearanceB);assert.deepEqual(room.route.battleStarted,[room.route.current]);assert.ok(room.preparation.loot.every(x=>!x));assert.equal(winner.player.inventory.knife,1);assert.equal(winner.player.inventorySlots[0].id,'shared-knife');
   await room.webSocketMessage(winner,JSON.stringify({type:'move_item',from:{area:'inventory',index:0},to:{area:'trash'},itemId:'shared-knife'}));assert.equal(winner.player.inventory.knife,1,'moves during battle are ignored');
   await room.webSocketMessage(a,JSON.stringify({type:'move_item',from:{area:'equipment',index:2},to:{area:'trash'},itemId:'shared-pants'}));assert.equal(a.player.equipmentSlots[2].item,'pants','cannot remove equipment during battle');
   room.stopTimer();room.phase='PREPARATION';a.player.ready=false;b.player.ready=false;
