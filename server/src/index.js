@@ -26,6 +26,7 @@ export class GameRoom{
     ctx.blockConcurrencyWhile(async()=>{
       if(typeof WebSocketRequestResponsePair!=='undefined'&&ctx.setWebSocketAutoResponse)ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
       this.disconnected=new Map((await ctx.storage.get('disconnected')||[]).filter(([,entry])=>entry.expiresAt>Date.now()));
+      for(const entry of this.disconnected.values())ensureInventory(entry.player);
       // Upgrade sockets opened by the previous room-only deployment.
       const sockets=this.sockets();
       const used=new Set(sockets.map(ws=>ws.deserializeAttachment()?.slot).filter(Boolean));
@@ -56,7 +57,7 @@ export class GameRoom{
     const used=new Set(this.players().map(player=>player.slot));
     const slot=[1,2,3,4].find(n=>!used.has(n));
     const [client,server]=Object.values(new WebSocketPair());
-    server.serializeAttachment(resumed||ensureInventory({id:crypto.randomUUID(),slot,ready:false,resumeToken:crypto.randomUUID()}));
+    server.serializeAttachment(ensureInventory(resumed||{id:crypto.randomUUID(),slot,ready:false,resumeToken:crypto.randomUUID()}));
     this.ctx.acceptWebSocket(server);
     if(resumed){this.disconnected.delete(resumed.id);try{active?.close(1000,'Connection replaced');}catch{}await this.saveDisconnected();}
     this.broadcast();
