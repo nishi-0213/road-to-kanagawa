@@ -1,3 +1,6 @@
+import {getPlayerStats} from '../../shared/personality.js';
+import {drawPlayerEditor,updatePlayerEditor,clearPlayerEditor} from './player-editor-ui.js';
+import {editPlayer} from '../../shared/player-editor.js';
 import {createSkinMask,createAppearanceLayers,updateAppearanceLayers} from './player-appearance.js';
 import {HAIRSTYLES} from '../../shared/appearance.js';
 import {createOutfit,updateOutfit,createHeldItem,updateHeldItem} from './player-outfit.js';
@@ -33,6 +36,7 @@ async function join(code,resuming=false){
   try{const data=JSON.parse(event.data);if(data.type==='room'){
    const previous=phase,oldMap=battle?.id;clearTimeout(connectionTimer);resumeToken=data.selfResumeToken||resumeToken;if(connecting)busy(false);reconnectAttempts=0;setConnectionStatus('');count=data.count;phase=data.phase;players=data.players;selfId=data.selfId;battle=data.battle;route=data.route;preparation=data.preparation||createPreparation();
    if(mode!=='online'||previous!==phase||oldMap!==battle?.id)enter('online');
+   else if(phase==='EDITOR'){if(gameScene?.editorView?.ids===players.map(p=>p.id).join(','))updatePlayerEditor(gameScene,players,selfId);else gameScene?.refresh();}
    else if(phase==='PREPARATION'){if(gameScene?.dragging)gameScene.refreshAfterDrag=true;else gameScene?.refresh();}
   }}catch{}
  };
@@ -43,7 +47,7 @@ async function join(code,resuming=false){
   setConnectionStatus('');resumeToken=null;showLogin(`接続が終了しました（コード ${event.code}${event.reason?'：'+event.reason:''}）。再度入室してください。`);
  };
 }
-document.querySelector('#solo').onclick=()=>{if(!connecting){phase='PREPARATION';battle=null;route=createRoute();selfId='solo';preparation=createPreparation();players=[ensureInventory({id:'solo',slot:1,ready:false})];enter('solo');}};
+document.querySelector('#solo').onclick=()=>{if(!connecting){phase='EDITOR';battle=null;route=createRoute();selfId='solo';preparation=createPreparation();players=[ensureInventory({id:'solo',slot:1,ready:false})];enter('solo');}};
 document.querySelector('#create').onclick=async()=>{
  if(connecting)return;busy(true);report('ルーム作成中…');
  try{const response=await fetch('/api/rooms',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error();const data=await response.json();busy(false);await join(data.code);}catch{busy(false);report('ルームを作成できませんでした。');}
@@ -63,7 +67,7 @@ class GameScene extends Phaser.Scene{
   this.input.on('wheel',(_pointer,_objects,_dx,dy)=>{if(phase==='BATTLE'&&dy)this.selectedItem=cycleItem(this.selectedItem,players.find(p=>p.id===selfId),Math.sign(dy));});
   this.game.canvas.addEventListener('wheel',event=>event.preventDefault(),{passive:false});
   this.game.canvas.addEventListener('contextmenu',event=>event.preventDefault());
-  for(const eventName of ['mousedown','mouseup'])this.game.canvas.addEventListener(eventName,event=>{if(phase==='PREPARATION'&&event.button===2){event.preventDefault();event.stopImmediatePropagation();}},{capture:true});
+  for(const eventName of ['mousedown','mouseup'])this.game.canvas.addEventListener(eventName,event=>{if(phase!=='BATTLE'&&event.button===2){event.preventDefault();event.stopImmediatePropagation();}},{capture:true});
   this.game.events.on('blur',()=>{this.input.keyboard.resetKeys();this.input.activePointer.reset();if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input'}));});
   // A neutral temporary 32px figure is used only until the original PNG is available.
   if(!this.textures.exists('player')){const g=this.make.graphics({x:0,y:0,add:false});g.fillStyle(0xeef5f7);g.fillCircle(16,9,6);g.fillRoundedRect(10,16,12,11,2);g.fillRect(9,26,5,5);g.fillRect(18,26,5,5);g.generateTexture('player',32,32);g.destroy();}
@@ -81,6 +85,7 @@ class GameScene extends Phaser.Scene{
  }
  text(x,y,text,style={}){return this.add.text(x,y,text,{...STYLE,...style});}
  refresh(){
+  clearPlayerEditor(this);if(phase==='BATTLE')this.input.keyboard.enableGlobalCapture();else this.input.keyboard.disableGlobalCapture();
   this.dragging=false;this.pendingDrop=null;
   for(const object of this.children.list)if(object.name==='loot-popup'||object.name==='combat-effect')this.tweens.killTweensOf(object);
   this.scopeMark=null;this.input.setDefaultCursor('default');this.lastSimulation=undefined;this.children.removeAll(true);this.actors.clear();this.boxSprites=new Map();this.boxProgress=new Map();this.inventoryCounts=new Map();this.inventorySelections=new Map();this.exitGlow=null;this.progress=null;this.staminaBar=null;this.exitTint=null;
@@ -89,13 +94,15 @@ class GameScene extends Phaser.Scene{
   if(phase==='BATTLE'&&battle)this.buildBattle();
   this.hud=this.add.container(0,0).setScrollFactor(0).setDepth(100000);
   this.hud.add(this.add.rectangle(0,0,this.scale.width,118,0x101820,.88).setOrigin(0));
-  this.hud.add(this.text(20,16,phase==='BATTLE'?'戦闘フェーズ':'準備フェーズ',{fontSize:'26px',color:'#eff7fa'}));
+  this.hud.add(this.text(20,16,phase==='EDITOR'?'プレイヤーエディター':phase==='BATTLE'?'戦闘フェーズ':'準備フェーズ',{fontSize:'26px',color:'#eff7fa'}));
   this.hud.add(this.text(20,54,mode==='solo'?'1人プレイ':`ルームコード：${room}　${count}/4人`));
   if(mode==='online'){
    const copy=this.text(20,82,'招待URLをコピー',{fontSize:'14px'}).setInteractive({useHandCursor:true});
    copy.on('pointerdown',async pointer=>{if(pointer.button!==0)return;const url=new URL(location.href);url.search='';url.searchParams.set('room',room);try{await navigator.clipboard.writeText(url.href);copy.setText('コピーしました');}catch{copy.setText('ルームコード：'+room);}});this.hud.add(copy);
   }
-  if(phase==='BATTLE'){
+  if(phase==='EDITOR'){
+   drawPlayerEditor(this,players,selfId,patch=>{if(mode==='solo'){const player=players.find(p=>p.id===selfId);if(editPlayer(player,patch))updatePlayerEditor(this,players,selfId);}else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'edit_player',patch}));},()=>{if(phase!=='EDITOR')return;if(mode==='solo'){phase='PREPARATION';players.forEach(p=>{p.ready=false;p.personalityEffectsActive=true;});this.refresh();}else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ready',ready:!players.find(p=>p.id===selfId).ready}));});
+  }else if(phase==='BATTLE'){
    this.hud.add(this.text(260,25,`${battle.city||''}　${BIOME_NAMES[battle.biome]||'森林地帯'}　WASD：移動 / Shift：ダッシュ`,{fontSize:'14px'}));
    this.hud.add(this.text(260,54,'スタミナ',{fontSize:'14px'}));
    this.hud.add(this.add.rectangle(340,54,164,14,0x15202a).setOrigin(0).setStrokeStyle(1,0x66807b));
@@ -130,7 +137,7 @@ class GameScene extends Phaser.Scene{
   players.forEach((player,index)=>{
    const mine=player.id===selfId,y=startY+index*gap;
    const background=this.add.rectangle(x,y,width,50,player.ready?0x245d50:mine?0x28465c:0x1b2c39).setStrokeStyle(1,mine?0x80d5ee:0x405461);
-   this.hud.add(background);this.hud.add(this.text(x,y,`プレイヤー${player.slot}${mine?'（あなた）':''}\n${player.connected===false?'再接続を待っています':player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
+   this.hud.add(background);this.hud.add(this.text(x,y,`${player.name||`プレイヤー${player.slot}`}${mine?'（あなた）':''}\n${player.connected===false?'再接続を待っています':player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
    if(locked)background.setAlpha(.4);
    if(mine&&!locked){background.setScrollFactor(0).setInteractive({useHandCursor:true});background.on('pointerdown',pointer=>{if(pointer.button!==0||phase!=='PREPARATION'||!background.active||!canStartBattle(route)||!background.getBounds().contains(pointer.x,pointer.y))return;
     if(mode==='solo'){if(!startBattle(route))return;discardUnclaimed(preparation,players);battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
@@ -228,7 +235,7 @@ class GameScene extends Phaser.Scene{
   this.progress=this.add.rectangle(e.x+4,-11,e.width-10,3,0x8bd7ff).setOrigin(0).setDepth(6).setVisible(false);
   for(const p of players){
    const sprite=this.add.image(p.x,p.y,'player').setDisplaySize(32,32).setDepth(3);
-   const label=this.text(p.x,p.y-25,`P${p.slot}${p.id===selfId?' ●':''}`,{fontSize:'12px',color:p.id===selfId?'#fff4ad':'#ffffff'}).setOrigin(.5).setDepth(4);
+   const label=this.text(p.x,p.y-25,`${p.name||`P${p.slot}`}${p.id===selfId?' ●':''}`,{fontSize:'12px',color:p.id===selfId?'#fff4ad':'#ffffff'}).setOrigin(.5).setDepth(4);
    const healBack=this.add.rectangle(p.x,p.y-30,28,5,0x101820).setDepth(10002).setVisible(false),healBar=this.add.rectangle(p.x-12,p.y-31,24,3,0x89e6ac).setOrigin(0).setDepth(10003).setVisible(false);
    const appearance=createAppearanceLayers(this,sprite);updateAppearanceLayers(sprite,appearance,p);
    const outfit=createOutfit(this,sprite);updateOutfit(sprite,outfit,p);
@@ -249,7 +256,7 @@ class GameScene extends Phaser.Scene{
    while(remaining>0){const dt=Math.min(.05,remaining);remaining-=dt;if(stepBattle(battle,players,new Map([[selfId,input]]),dt)){preparation=finishBattleInventory(battle,players);phase='PREPARATION';battle=null;finishBattle(route);players.forEach(p=>p.ready=false);this.refresh();return;}}
   }else if(time-this.lastSend>=50){this.lastSend=time;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'input',...input}));}
   const ids=new Set(players.map(p=>p.id));for(const [id,a] of this.actors)if(!ids.has(id)){a.sprite.destroy();a.label.destroy();a.healBack.destroy();a.healBar.destroy();a.outfit.forEach(layer=>layer.destroy());a.heldItem.destroy();a.appearance.skin.destroy();a.appearance.hair.destroy();this.actors.delete(id);}
-  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);updateAppearanceLayers(a.sprite,a.appearance,p);updateOutfit(a.sprite,a.outfit,p);if(p.id===selfId)updateHeldItem(a,p,this.selectedItem,Math.atan2(aim.y-p.y,aim.x-p.x));else updateHeldItem(a,p);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId&&!(p.healProgress>0));a.healBack.setPosition(a.sprite.x,a.sprite.y-30).setVisible(p.healProgress>0);a.healBar.setPosition(a.sprite.x-12,a.sprite.y-31).setScale((p.healProgress||0)/3,1).setVisible(p.healProgress>0);}
+  for(const p of players){const a=this.actors.get(p.id);if(!a)continue;const blend=mode==='solo'?1:1-Math.exp(-delta/45);a.sprite.x+=(p.x-a.sprite.x)*blend;a.sprite.y+=(p.y-a.sprite.y)*blend;a.sprite.setDepth(a.sprite.y+16);updateAppearanceLayers(a.sprite,a.appearance,p);updateOutfit(a.sprite,a.outfit,p);if(p.id===selfId)updateHeldItem(a,p,this.selectedItem,Math.atan2(aim.y-p.y,aim.x-p.x));else updateHeldItem(a,p);a.label.setPosition(a.sprite.x,a.sprite.y-25).setDepth(a.sprite.y+17).setVisible(!p.lootBoxId&&!(p.healProgress>0));a.healBack.setPosition(a.sprite.x,a.sprite.y-30).setVisible(p.healProgress>0);a.healBar.setPosition(a.sprite.x-12,a.sprite.y-31).setScale((p.healProgress||0)/(p.healDuration||3),1).setVisible(p.healProgress>0);}
   renderCombatEffects(this,battle);
   const me=players.find(p=>p.id===selfId);updateCombatHud(this,me);updateCombatAim(this,me,input.secondary);if(me&&this.staminaBar){this.staminaBar.scaleX=me.stamina;this.staminaBar.setFillStyle(me.exhausted?0xe6a46c:0x88ddbb);}
   for(const box of battle.boxes||[]){
@@ -259,8 +266,9 @@ class GameScene extends Phaser.Scene{
    if(bar){bar.back.setVisible(progress>0);bar.fill.setVisible(progress>0).setScale(progress,1);}
   }
   for(const item of ITEMS)this.inventoryCounts.get(item.id)?.setText(String((me?.inventory?.[item.id]||0)+(me?.battleLoot?.[item.id]||0)));
+  const lootSeconds=getPlayerStats(me,battle,players).lootTime;
   const waiting=players.some(player=>player.connected===false);
-  this.boxHint?.setText(waiting?'プレイヤーの再接続を待っています（最大30秒）':nearby?'E長押し（1秒）：アイテムボックスを開ける':'');
+  this.boxHint?.setText(waiting?'プレイヤーの再接続を待っています（最大30秒）':nearby?`E長押し（${Number(lootSeconds.toFixed(2))}秒）：アイテムボックスを開ける`:'');
   const all=battle.inside===players.length&&players.length>0&&!waiting,color=all?0x51baff:battle.inside>0?0xbaff45:0xffd84a;
   this.exitTint?.setTint(color);
   if(this.exitGlow){this.exitGlow.color=color;this.exitGlow.outerStrength=4+Math.sin(time/240)*.7;}

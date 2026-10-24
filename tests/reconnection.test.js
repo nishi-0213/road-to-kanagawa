@@ -11,5 +11,5 @@ test('heartbeat, private resume credentials, grace preservation, blocked escape 
  for(const p of room.disconnected.values()){p.player.x=room.battle.exit.x+16;p.player.y=16;}
  b.player.x=room.battle.exit.x+16;b.player.y=16;room.battle.escape=2.99;room.lastTick=Date.now()-50;room.tick();assert.equal(room.phase,'BATTLE');assert.equal(room.battle.escape,0,'disconnected teammate cannot silently complete extraction');assert.equal(room.battle.id,mapId);
  room.disconnected.get('a').expiresAt=Date.now()-1;await room.alarm();assert.equal(room.players().length,1);assert.equal(room.disconnected.size,0);
- await room.webSocketClose(b);assert.equal(room.players().length,1);room.disconnected.get('b').expiresAt=Date.now()-1;await room.alarm();assert.equal(room.players().length,0);assert.equal(room.phase,'PREPARATION');assert.equal(room.battle,null);room.stopTimer();
+ await room.webSocketClose(b);assert.equal(room.players().length,1);room.disconnected.get('b').expiresAt=Date.now()-1;await room.alarm();assert.equal(room.players().length,0);assert.equal(room.phase,'EDITOR');assert.equal(room.battle,null);room.stopTimer();
 });

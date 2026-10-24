@@ -6,7 +6,7 @@ async function until(fn,ms=8000){const end=Date.now()+ms;while(!fn()){if(Date.no
 const send=(p,m)=>p.ws.send(JSON.stringify(m));
 try{
  for(let i=0;i<4;i++){const p={ws:new WebSocket(`${base.replace(/^http/,'ws')}/api/rooms/${code}/ws`),state:null};group.push(p);p.ws.on('message',raw=>p.state=JSON.parse(raw));await new Promise((r,j)=>{p.ws.once('open',r);p.ws.once('error',j);});await until(()=>p.state);}
- await until(()=>group.every(p=>p.state.count===4));group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));
+ await until(()=>group.every(p=>p.state.count===4));group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='PREPARATION'));group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));
  assert.ok(group.every(p=>p.state.battle.id===group[0].state.battle.id));assert.ok(group.every(p=>p.state.players[0].y>p.state.battle.rows*32-100));
  // Coordinates submitted by a client never override authoritative movement.
  const first=group[0],initial=first.state.players[0].x;send(first,{type:'input',x:99999,y:0});await new Promise(r=>setTimeout(r,150));assert.equal(first.state.players[0].x,initial);

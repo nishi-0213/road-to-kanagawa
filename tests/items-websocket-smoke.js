@@ -1,3 +1,4 @@
+import {getPlayerStats} from '../shared/personality.js';
 import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 const base=process.env.TEST_URL||'http://127.0.0.1:8787',group=[],timers=[];
@@ -7,7 +8,7 @@ const send=(p,m)=>p.ws.send(JSON.stringify(m));
 const total=inventory=>Object.values(inventory||{}).reduce((a,b)=>a+b,0);const acquired=p=>total(p.inventory)+total(p.battleLoot);
 try{
  for(let i=0;i<2;i++){const p={ws:new WebSocket(`${base.replace(/^http/,'ws')}/api/rooms/${code}/ws`),state:null};group.push(p);p.ws.on('message',raw=>p.state=JSON.parse(raw));await new Promise((r,j)=>{p.ws.once('open',r);p.ws.once('error',j);});await until(()=>p.state);}
- await until(()=>group.every(p=>p.state.count===2));group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));
+ await until(()=>group.every(p=>p.state.count===2));group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='PREPARATION'));group.forEach(p=>send(p,{type:'ready',ready:true}));await until(()=>group.every(p=>p.state.phase==='BATTLE'));
  const first=group[0],map=first.state.battle;assert.ok(map.rocks.length>0);assert.ok(map.boxes.length>=3&&map.boxes.length<=5);assert.ok(map.boxes.every(b=>!b.loot));assert.deepEqual(map,group[1].state.battle);
  const start=first.state.players[0],target=[...map.boxes].sort((a,b)=>Math.hypot(a.x-start.x,a.y-start.y)-Math.hypot(b.x-start.x,b.y-start.y))[0];
  send(first,{type:'open_box',id:target.id,item:'rifle',quantity:999});await new Promise(r=>setTimeout(r,120));assert.ok(!first.state.battle.boxes.find(b=>b.id===target.id).opened);assert.ok(first.state.players.every(p=>acquired(p)===0));
@@ -22,7 +23,7 @@ try{
  const hold=setInterval(()=>group.forEach(p=>send(p,{type:'input',interact:true,progress:999,item:'rifle',quantity:999})),50);timers.push(hold);
  await until(()=>first.state.players.every(p=>p.lootProgress>.2));assert.ok(!first.state.battle.boxes.find(b=>b.id===target.id).opened);assert.ok(first.state.players.every(p=>acquired(p)===0));
  await until(()=>group.every(p=>p.state.battle.boxes.find(b=>b.id===target.id).opened));clearInterval(hold);group.forEach(p=>send(p,{type:'input'}));
- const state=first.state,box=state.battle.boxes.find(b=>b.id===target.id);assert.ok(['food','fuel','knife','rifle','medicine','pants','hat','tshirt'].includes(box.loot.item));assert.ok(box.loot.quantity>=1&&box.loot.quantity<=4);if(['knife','rifle','medicine','pants','hat','tshirt'].includes(box.loot.item))assert.equal(box.loot.quantity,1);
+ const state=first.state,box=state.battle.boxes.find(b=>b.id===target.id);assert.ok(['food','fuel','knife','rifle','medicine','pants','hat','tshirt'].includes(box.loot.item));const stats=getPlayerStats(state.players.find(p=>p.id===box.openedBy)),bonus=box.loot.item==='food'?stats.foodBonus:box.loot.item==='fuel'?stats.fuelBonus:0;assert.ok(box.loot.quantity>=Math.max(1,1+bonus)&&box.loot.quantity<=Math.max(1,4+bonus));if(['knife','rifle','medicine','pants','hat','tshirt'].includes(box.loot.item))assert.equal(box.loot.quantity,1);
  assert.equal(state.players.filter(p=>acquired(p)>0).length,1);assert.equal(state.players.reduce((sum,p)=>sum+acquired(p),0),box.loot.quantity);
  const before=JSON.stringify(state.players.map(p=>p.inventory));group.forEach(p=>send(p,{type:'open_box',id:target.id}));await new Promise(r=>setTimeout(r,150));assert.equal(JSON.stringify(first.state.players.map(p=>p.inventory)),before);assert.ok(first.state.battle.boxes.filter(b=>b.id!==target.id).every(b=>!b.loot));
  console.log('PASS: shared boxes and rocks, unopened loot hidden, distance validation, server collision-aware movement, one-second server timer and progress, concurrent single claim, correct inventory and quantity, repeated-open rejection');

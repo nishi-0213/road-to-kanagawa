@@ -1,3 +1,4 @@
+import {getPlayerStats} from '../../shared/personality.js';
 import {getDefense} from '../../shared/preparation.js';
 import {availableItems,itemCount,MAX_HP} from '../../shared/combat.js';
 import {ITEMS} from '../../shared/items.js';
@@ -22,11 +23,12 @@ export function renderCombatEffects(scene,map){
  if(scene.seenEffects.size>256)scene.seenEffects=new Set((map.effects||[]).map(effect=>effect.id));
 }
 export function updateCombatHud(scene,player){
+ const stats=getPlayerStats(player),maxHp=stats.maxHp;
  const items=availableItems(player);if(!items.includes(scene.selectedItem))scene.selectedItem=items[0]||null;
  const item=ITEMS.find(item=>item.id===scene.selectedItem);
- scene.equippedText?.setText(item?`選択：${item.name} ×${itemCount(player,item.id)}　ホイール：切替 / ${item.id==='medicine'?'左長押し3秒：治療':item.id==='rifle'?'左：射撃 / 右長押し：照準':'左：攻撃 / 右長押し0.5秒：強攻撃（スタミナ30%）'}`:'使用できるアイテムを所持していません');
+ scene.equippedText?.setText(item?`選択：${item.name} ×${itemCount(player,item.id)}　ホイール：切替 / ${item.id==='medicine'?`左長押し${Number(stats.medicineTime.toFixed(2))}秒：治療`:item.id==='rifle'?'左：射撃 / 右長押し：照準':'左：攻撃 / 右長押し0.5秒：強攻撃（スタミナ30%）'}`:'使用できるアイテムを所持していません');
  scene.defenseText?.setText(`防御力 ${getDefense(player)}`);
- scene.hpBar?.setScale((player?.hp??MAX_HP)/MAX_HP,1);scene.hpText?.setText(`HP ${Math.ceil(player?.hp??MAX_HP)}/${MAX_HP}`);
+ scene.hpBar?.setScale((player?.hp??maxHp)/maxHp,1);scene.hpText?.setText(`HP ${Math.ceil(player?.hp??maxHp)}/${maxHp}`);
  for(const [id,frame] of scene.inventorySelections||[])frame.setVisible(id===scene.selectedItem);
  const charge=player?.strongCharge||0;scene.healBack?.setVisible(charge>0);scene.healBar?.setVisible(charge>0).setScale(charge/.5,1).setFillStyle(0xffcc68);scene.healText?.setVisible(charge>0).setText(`強攻撃のため ${charge.toFixed(1)} / 0.5秒`);
 }

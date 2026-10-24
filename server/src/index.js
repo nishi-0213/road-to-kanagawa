@@ -1,3 +1,4 @@
+import {editPlayer} from '../../shared/player-editor.js';
 import {ensureInventory,createPreparation,finishBattleInventory,discardUnclaimed,movePreparationItem} from '../../shared/preparation.js';
 import {createRoute,upgradeRoute,selectNode,finishBattle,canStartBattle,startBattle} from '../../shared/route.js';
 import {createBattle,stepBattle} from '../../shared/battle.js';
@@ -22,7 +23,7 @@ export default {
 const RECONNECT_GRACE_MS=30000;
 export class GameRoom{
   constructor(ctx){
-    this.ctx=ctx;this.initialized=false;this.phase='PREPARATION';this.battle=null;this.inputs=new Map();this.timer=null;this.route=null;this.preparation=createPreparation();this.disconnected=new Map();
+    this.ctx=ctx;this.initialized=false;this.phase='EDITOR';this.battle=null;this.inputs=new Map();this.timer=null;this.route=null;this.preparation=createPreparation();this.disconnected=new Map();
     ctx.blockConcurrencyWhile(async()=>{
       if(typeof WebSocketRequestResponsePair!=='undefined'&&ctx.setWebSocketAutoResponse)ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
       this.disconnected=new Map((await ctx.storage.get('disconnected')||[]).filter(([,entry])=>entry.expiresAt>Date.now()));
@@ -34,10 +35,10 @@ export class GameRoom{
       for(const ws of sockets){const player=ensureInventory(ws.deserializeAttachment());player.resumeToken??=crypto.randomUUID();ws.serializeAttachment(player);this.disconnected.delete(player.id);}
       this.preparation=await ctx.storage.get('preparation')||createPreparation();
       this.initialized=await ctx.storage.get('initialized')===true;
-      this.phase=await ctx.storage.get('phase')||'PREPARATION';
+      this.phase=await ctx.storage.get('phase')||'EDITOR';
       const savedRoute=await ctx.storage.get('route');this.route=upgradeRoute(savedRoute);
       if(savedRoute?.version!==2)await ctx.storage.put('route',this.route);
-      if(!this.sockets().length&&!this.disconnected.size){this.phase='PREPARATION';this.route=createRoute();this.preparation=createPreparation();await ctx.storage.put({phase:this.phase,route:this.route,preparation:this.preparation});}
+      if(!this.sockets().length&&!this.disconnected.size){this.phase='EDITOR';this.route=createRoute();this.preparation=createPreparation();await ctx.storage.put({phase:this.phase,route:this.route,preparation:this.preparation});}
       if(this.phase==='BATTLE'){if(!this.route.battleStarted.includes(this.route.current))this.route.battleStarted.push(this.route.current);await ctx.storage.put('route',this.route);this.battle=await ctx.storage.get('battle');if(this.battle){this.battle.escape=0;this.startTimer();}else{this.phase='PREPARATION';await ctx.storage.put('phase',this.phase);}}
     });
   }
@@ -52,7 +53,7 @@ export class GameRoom{
     const saved=token?[...this.disconnected.values()].find(entry=>entry.expiresAt>Date.now()&&entry.player.resumeToken===token):null;
     const resumed=active?.deserializeAttachment()||saved?.player;
     if(token&&!resumed)return new Response('Session expired',{status:401});
-    if(!resumed&&this.phase!=='PREPARATION')return new Response('Battle already started',{status:409});
+    if(!resumed&&this.phase!=='EDITOR')return new Response('Battle already started',{status:409});
     if(!resumed&&this.players().length>=4)return new Response('Room full',{status:409});
     const used=new Set(this.players().map(player=>player.slot));
     const slot=[1,2,3,4].find(n=>!used.has(n));
@@ -75,7 +76,10 @@ export class GameRoom{
   }
   async advance(){
     const players=this.players();
-    if(!players.length){this.phase='PREPARATION';this.battle=null;this.route=createRoute();this.preparation=createPreparation();this.stopTimer();await this.ctx.storage.put({phase:this.phase,route:this.route,preparation:this.preparation});}
+    if(!players.length){this.phase='EDITOR';this.battle=null;this.route=createRoute();this.preparation=createPreparation();this.stopTimer();await this.ctx.storage.put({phase:this.phase,route:this.route,preparation:this.preparation});}
+    else if(this.phase==='EDITOR'&&!this.disconnected.size&&players.every(p=>p.ready)){
+      this.phase='PREPARATION';for(const ws of this.sockets())ws.serializeAttachment({...ws.deserializeAttachment(),personalityEffectsActive:true,ready:false});await this.ctx.storage.put('phase',this.phase);
+    }
     else if(this.phase==='PREPARATION' && canStartBattle(this.route)&&players.every(p=>p.ready)){
       startBattle(this.route);
       discardUnclaimed(this.preparation,players);
@@ -115,6 +119,7 @@ export class GameRoom{
     if(raw==='ping'){ws.send('pong');return;}
     if(typeof raw!=='string'||raw.length>768){ws.close(1008,'Invalid message');return;}
     let message;try{message=JSON.parse(raw);}catch{ws.close(1008,'Invalid JSON');return;}
+    if(message?.type==='edit_player'){if(this.phase==='EDITOR'){const player=ws.deserializeAttachment();if(editPlayer(player,message.patch)){ws.serializeAttachment(player);this.broadcast();}}return;}
     if(message?.type==='move_item'){
       if(this.phase==='PREPARATION'){const players=this.players(),id=ws.deserializeAttachment().id;
         if(movePreparationItem(this.preparation,players,id,message)){
@@ -134,7 +139,7 @@ export class GameRoom{
       if(this.phase==='BATTLE'){const id=ws.deserializeAttachment().id;this.inputs.set(id,{left:message.left===true,right:message.right===true,up:message.up===true,down:message.down===true,sprint:message.sprint===true,interact:message.interact===true,use:message.use===true,secondary:message.secondary===true,selected:['rifle','knife','medicine'].includes(message.selected)?message.selected:null,aimX:Number.isFinite(message.aimX)?Math.max(-10000,Math.min(10000,message.aimX)):null,aimY:Number.isFinite(message.aimY)?Math.max(-10000,Math.min(10000,message.aimY)):null,at:Date.now()});}return;
     }
     if(message?.type!=='ready'||typeof message.ready!=='boolean'){ws.close(1008,'Invalid action');return;}
-    if(this.phase!=='PREPARATION'||!canStartBattle(this.route))return;
+    if(this.phase!=='EDITOR'&&(this.phase!=='PREPARATION'||!canStartBattle(this.route)))return;
     const player=ws.deserializeAttachment();
     if(player.ready===message.ready)return;
     // Identity always comes from the socket; clients cannot ready another player.

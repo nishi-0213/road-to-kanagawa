@@ -1,3 +1,4 @@
+import {attachPersonalityTooltip} from './personality-tooltip.js';
 import {createAppearanceLayers,updateAppearanceLayers} from './player-appearance.js';
 import {createOutfit,updateOutfit} from './player-outfit.js';
 import {getDefense,EQUIPMENT_SLOTS} from '../../shared/preparation.js';
@@ -33,7 +34,7 @@ export function drawPreparationInventory(scene,players,selfId,state){
  const panelTop=top+stripHeight+38,panelGap=14,panelWidth=Math.min(360,(mainWidth-panelGap*(players.length-1))/players.length),panelHeight=Math.max(68,height-panelTop-20);
  players.forEach((player,order)=>{
   const x=left+order*(panelWidth+panelGap),mine=player.id===selfId,slots=player.inventorySlots||Array(12).fill(null),rows=Math.ceil(slots.length/4),cell=Math.max(16,Math.min(52,(panelWidth-36)/4,(panelHeight-50)/(rows+EQUIPMENT_SLOTS.length)));
-  text(x,panelTop-25,`プレイヤー${player.slot} 所持品12枠${mine?'（あなた）':''}`,{fontSize:`${Math.max(9,Math.min(16,(panelWidth-8)/(mine?19:14)))}px`,color:mine?'#d0e8b3':'#a1b3be'});
+  text(x,panelTop-25,`${player.name||`プレイヤー${player.slot}`} 所持品12枠${mine?'（あなた）':''}`,{fontSize:`${Math.max(9,Math.min(16,(panelWidth-8)/(mine?19:14)))}px`,color:mine?'#d0e8b3':'#a1b3be'});
   rect(x,panelTop,panelWidth,panelHeight,0x11222d).setStrokeStyle(1,mine?0x9cbf94:0x455d6c);
   scene.inventoryPanels.push({playerId:player.id,x,y:panelTop,width:panelWidth,height:panelHeight});
   text(x+10,panelTop+8,`防御力 ${getDefense(player)}`,{fontSize:'13px',color:'#bed5f3'});
@@ -51,7 +52,7 @@ export function drawPreparationInventory(scene,players,selfId,state){
   const personalityX=gridX+cell*2.6,personalityWidth=x+panelWidth-personalityX-8;
   rect(personalityX,equipmentY,personalityWidth,cell*3,0x172b36).setStrokeStyle(1,0x455d6c);
   text(personalityX+6,equipmentY+6,'性格',{fontSize:'13px',color:'#ead9aa'});
-  (player.personalities||[]).forEach((trait,index)=>text(personalityX+6,equipmentY+26+index*Math.min(24,Math.max(16,(cell*3-30)/3)),trait,{fontSize:`${Math.max(9,Math.min(14,(personalityWidth-12)/5))}px`,color:'#d7e3df'}));
+  (player.personalities||[]).forEach((trait,index)=>attachPersonalityTooltip(scene,text(personalityX+6,equipmentY+26+index*Math.min(24,Math.max(16,(cell*3-30)/3)),trait,{fontSize:`${Math.max(9,Math.min(14,(personalityWidth-12)/5))}px`,color:'#d7e3df'}),trait));
   const layers=createOutfit(scene,preview);for(const layer of layers)scene.hud.add(layer);updateOutfit(preview,layers,player);
  });
 }

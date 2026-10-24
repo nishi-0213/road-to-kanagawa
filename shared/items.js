@@ -1,3 +1,4 @@
+import {getPlayerStats} from './personality.js';
 import {ensureInventory} from './preparation.js';
 import {canStand} from './terrain.js';
 export const ITEMS=[{id:'food',name:'食料'},{id:'fuel',name:'燃料'},{id:'knife',name:'ナイフ'},{id:'rifle',name:'ライフル'},{id:'medicine',name:'医薬品'},{id:'pants',name:'ズボン'},{id:'hat',name:'帽子'},{id:'tshirt',name:'Tシャツ'}];
@@ -32,7 +33,7 @@ export function openBox(map,p,id,random=Math.random){
  const box=(map.boxes||[]).find(b=>b.id===id);
  if(!box||box.opened||Math.hypot(box.x-p.x,box.y-p.y)>OPEN_DISTANCE||!canReachBox(map,p,box))return null;
  const item=ITEMS[Math.min(ITEMS.length-1,Math.floor(random()*ITEMS.length))].id;
- const quantity=item==='food'||item==='fuel'?1+Math.min(3,Math.floor(random()*4)):1;
+ const stats=getPlayerStats(p,map),quantity=item==='food'||item==='fuel'?Math.max(1,1+Math.min(3,Math.floor(random()*4))+(item==='food'?stats.foodBonus:stats.fuelBonus)):1;
  ensureInventory(p);if(item==='food'||item==='fuel')p.inventory[item]+=quantity;else p.battleLoot[item]+=quantity;
  box.opened=true;box.openedBy=p.id;box.loot={item,quantity};return box.loot;
 }
@@ -42,7 +43,7 @@ export function stepLoot(map,players,inputs,seconds,random=Math.random){
   const box=inputs.get(player.id)?.interact===true?nearestBox(map,player):null;
   if(!box){player.lootBoxId=null;player.lootProgress=0;continue;}
   if(player.lootBoxId!==box.id){player.lootBoxId=box.id;player.lootProgress=0;}
-  player.lootProgress=Math.min(1,(player.lootProgress||0)+dt);
+  player.lootProgress=Math.min(1,(player.lootProgress||0)+dt/getPlayerStats(player,map,players).lootTime);
   if(player.lootProgress>=1-1e-8){if(openBox(map,player,box.id,random))collected=true;player.lootBoxId=null;player.lootProgress=0;}
  }
  return collected;
