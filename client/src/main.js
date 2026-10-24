@@ -132,7 +132,7 @@ class GameScene extends Phaser.Scene{
    const background=this.add.rectangle(x,y,width,50,player.ready?0x245d50:mine?0x28465c:0x1b2c39).setStrokeStyle(1,mine?0x80d5ee:0x405461);
    this.hud.add(background);this.hud.add(this.text(x,y,`プレイヤー${player.slot}${mine?'（あなた）':''}\n${player.connected===false?'再接続を待っています':player.ready?'準備完了 ✓':'準備完了'}`,{align:'center',color:mine?'#eff7fa':'#8da2b1'}).setOrigin(.5));
    if(locked)background.setAlpha(.4);
-   if(mine&&!locked){background.setInteractive({useHandCursor:true});background.on('pointerdown',pointer=>{if(pointer.button!==0)return;
+   if(mine&&!locked){background.setScrollFactor(0).setInteractive({useHandCursor:true});background.on('pointerdown',pointer=>{if(pointer.button!==0||phase!=='PREPARATION'||!background.active||!canStartBattle(route)||!background.getBounds().contains(pointer.x,pointer.y))return;
     if(mode==='solo'){if(!startBattle(route))return;discardUnclaimed(preparation,players);battle=createBattle(players);battle.city=route.nodes[route.current].name;phase='BATTLE';this.refresh();}
     else if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ready',ready:!player.ready}));
    });}
