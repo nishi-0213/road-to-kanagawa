@@ -3,7 +3,7 @@ export const GEAR=['knife','rifle','medicine','pants','hat','tshirt'];
 export const EQUIPMENT_SLOTS=[{id:'head',name:'頭',item:'hat'},{id:'body',name:'胴',item:'tshirt'},{id:'legs',name:'脚',item:'pants'}];
 const ownedSlots=player=>[...(player?.inventorySlots||[]),...(player?.equipmentSlots||[])];
 export const DEFENSE_VALUES={pants:2,hat:1,tshirt:1};
-export function getDefense(player){return ownedSlots(player).reduce((total,slot)=>total+(DEFENSE_VALUES[slot?.item]||0)*(slot?.quantity||0),0);}
+export function getDefense(player){return EQUIPMENT_SLOTS.reduce((total,equipment,index)=>{const item=player?.equipmentSlots?.[index];return total+(item?.item===equipment.item&&item.quantity===1?DEFENSE_VALUES[item.item]:0);},0);}
 export function createBattleLoot(){return Object.fromEntries(GEAR.map(item=>[item,0]));}
 export function ensureInventory(player){
  player.inventory??=Object.fromEntries(['food','fuel',...GEAR].map(item=>[item,0]));

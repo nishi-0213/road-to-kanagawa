@@ -15,12 +15,12 @@ test('clothes equip only into matching head/body/legs, and weapons cannot be equ
 });
 test('equip/unequip and compatible swaps preserve IDs and ownership, incompatible reverse swaps cannot corrupt slots',()=>{
  const p=player(),state=createPreparation();state.loot[0]=item('hat-1','hat');p.inventorySlots[0]=item('rifle','rifle');p.inventorySlots[1]=item('hat-2','hat');ensureInventory(p);
- assert.ok(move(state,[p],p,{area:'loot',index:0},{area:'equipment',index:0}));assert.equal(p.defense,2);
+ assert.ok(move(state,[p],p,{area:'loot',index:0},{area:'equipment',index:0}));assert.equal(p.defense,1);
  assert.equal(move(state,[p],p,{area:'equipment',index:0},{area:'inventory',index:0}),false,'rifle may not swap into head slot');
- assert.ok(move(state,[p],p,{area:'inventory',index:1},{area:'equipment',index:0}));assert.equal(p.equipmentSlots[0].id,'hat-2');assert.equal(p.inventorySlots[1].id,'hat-1');assert.equal(p.defense,2);
- assert.ok(move(state,[p],p,{area:'equipment',index:0},{area:'inventory',index:2}));assert.equal(p.equipmentSlots[0],null);assert.equal(p.defense,2,'stored clothing retains defense under the owned-items rule');
- assert.ok(move(state,[p],p,{area:'inventory',index:2},{area:'equipment',index:0}));assert.ok(move(state,[p],p,{area:'equipment',index:0},{area:'loot',index:0}));assert.equal(p.defense,1);
- assert.ok(move(state,[p],p,{area:'loot',index:0},{area:'equipment',index:0}));assert.ok(move(state,[p],p,{area:'equipment',index:0},{area:'trash'}));assert.equal(p.equipmentSlots[0],null);assert.equal(p.defense,1);assert.equal(p.inventory.hat,1);
+ assert.ok(move(state,[p],p,{area:'inventory',index:1},{area:'equipment',index:0}));assert.equal(p.equipmentSlots[0].id,'hat-2');assert.equal(p.inventorySlots[1].id,'hat-1');assert.equal(p.defense,1);
+ assert.ok(move(state,[p],p,{area:'equipment',index:0},{area:'inventory',index:2}));assert.equal(p.equipmentSlots[0],null);assert.equal(p.defense,0,'stored clothing does not add defense');
+ assert.ok(move(state,[p],p,{area:'inventory',index:2},{area:'equipment',index:0}));assert.ok(move(state,[p],p,{area:'equipment',index:0},{area:'loot',index:0}));assert.equal(p.defense,0);
+ assert.ok(move(state,[p],p,{area:'loot',index:0},{area:'equipment',index:0}));assert.ok(move(state,[p],p,{area:'equipment',index:0},{area:'trash'}));assert.equal(p.equipmentSlots[0],null);assert.equal(p.defense,0);assert.equal(p.inventory.hat,1);
 });
 test('equipment rejects foreign owners, stale items, invalid indices, stacked clothing and concurrent double claims',()=>{
  const a=player(),b=player('b'),state=createPreparation(),players=[a,b];state.loot[0]=item('one','hat');state.loot[1]=item('stack','hat',2);
@@ -32,5 +32,5 @@ test('equipment rejects foreign owners, stale items, invalid indices, stacked cl
  assert.equal(a.equipmentSlots[0].id,'one');assert.equal(b.equipmentSlots[0],null);
 });
 test('old inventories gain empty equipment slots without auto-equipping or losing clothing',()=>{
- const p={id:'old',inventory:{pants:2,hat:1}};ensureInventory(p);const ids=p.inventorySlots.filter(Boolean).map(item=>item.id);assert.deepEqual(p.equipmentSlots,[null,null,null]);assert.equal(p.defense,5);ensureInventory(p);assert.deepEqual(p.inventorySlots.filter(Boolean).map(item=>item.id),ids);
+ const p={id:'old',inventory:{pants:2,hat:1}};ensureInventory(p);const ids=p.inventorySlots.filter(Boolean).map(item=>item.id);assert.deepEqual(p.equipmentSlots,[null,null,null]);assert.equal(p.defense,0);ensureInventory(p);assert.deepEqual(p.inventorySlots.filter(Boolean).map(item=>item.id),ids);
 });

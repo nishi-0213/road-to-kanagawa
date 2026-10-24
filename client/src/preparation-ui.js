@@ -32,12 +32,13 @@ export function drawPreparationInventory(scene,players,selfId,state){
  const panelTop=top+stripHeight+38,panelGap=14,panelWidth=Math.min(360,(mainWidth-panelGap*(players.length-1))/players.length),panelHeight=Math.max(68,height-panelTop-20);
  players.forEach((player,order)=>{
   const x=left+order*(panelWidth+panelGap),mine=player.id===selfId,slots=player.inventorySlots||Array(12).fill(null),rows=Math.ceil(slots.length/4),cell=Math.max(16,Math.min(52,(panelWidth-20)/4,(panelHeight-50)/(rows+EQUIPMENT_SLOTS.length)));
-  text(x,panelTop-25,`プレイヤー${player.slot} アイテム欄${mine?'（あなた）':''}`,{fontSize:`${Math.max(9,Math.min(16,(panelWidth-8)/(mine?19:14)))}px`,color:mine?'#d0e8b3':'#a1b3be'});
+  text(x,panelTop-25,`プレイヤー${player.slot} 所持品12枠${mine?'（あなた）':''}`,{fontSize:`${Math.max(9,Math.min(16,(panelWidth-8)/(mine?19:14)))}px`,color:mine?'#d0e8b3':'#a1b3be'});
   rect(x,panelTop,panelWidth,panelHeight,0x11222d).setStrokeStyle(1,mine?0x9cbf94:0x455d6c);
   scene.inventoryPanels.push({playerId:player.id,x,y:panelTop,width:panelWidth,height:panelHeight});
   text(x+10,panelTop+8,`防御力 ${getDefense(player)}`,{fontSize:'13px',color:'#bed5f3'});
   const gridX=x+(panelWidth-cell*4)/2,gridY=panelTop+34;
   slots.forEach((item,index)=>slot('inventory',index,gridX+(index%4+.5)*cell,gridY+(Math.floor(index/4)+.5)*cell,cell,item,mine,player.id));
+  rect(gridX,gridY+rows*cell+3,cell*4,1,0x455d6c);
   const equipmentY=gridY+rows*cell+8;
   EQUIPMENT_SLOTS.forEach((equipment,index)=>{
    const y=equipmentY+(index+.5)*cell;
